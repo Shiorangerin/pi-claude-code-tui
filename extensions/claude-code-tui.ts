@@ -330,7 +330,7 @@ export default function (pi: ExtensionAPI) {
 					// Hint line: only features that actually exist in pi
 					const hints = theme.fg(
 						"dim",
-						"! for bash mode · ctrl+p for model · shift+tab for thinking · ctrl+o for tools · ctrl+g for editor",
+						"! for bash mode · ctrl+p model · shift+tab thinking · ctrl+o tools",
 					);
 
 					const modelName = currentModelName || ctx.model?.name || ctx.model?.id || "no model";
