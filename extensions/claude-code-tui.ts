@@ -497,7 +497,7 @@ export default function (pi: ExtensionAPI) {
 	// width. Display-only: session and model context keep the original text.
 	pi.registerMarkdownTransformer((markdown, { messageType, availableWidth }) => {
 		if (messageType !== "user") return markdown;
-		const bg = "\x1b[48;2;30;30;30m";
+		const bg = "\x1b[48;2;55;55;55m"; // CC userMessageBackground rgb(55,55,55)
 		const bgOff = "\x1b[49m";
 		const width = Math.max(1, Math.floor(availableWidth ?? 80));
 		// Pad with NBSPs: plain trailing spaces get trimmed by the markdown
