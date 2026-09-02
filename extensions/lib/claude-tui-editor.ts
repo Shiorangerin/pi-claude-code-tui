@@ -61,19 +61,21 @@ export function roundedBorderLine(
  * Restyle only the editor fake cursor (reverse-video span), not other reverse video.
  * Prefer the focused form with CURSOR_MARKER; fall back to the first short reverse span.
  */
-export function restyleEditorCursor(line: string, openStyle: string): string {
+export function restyleEditorCursor(line: string, openStyle: string, showCursor = true): string {
+	// Blink-off phase: restore the plain character (cursor invisible).
+	const replacement = showCursor ? openStyle : "$1";
 	const markerIdx = line.indexOf(CURSOR_MARKER);
 	if (markerIdx !== -1) {
 		// Focused editor: replace the reverse-video span after the marker with
 		// the bar style (the bar takes over the cell, like CC's bar cursor).
 		const afterMarker = markerIdx + CURSOR_MARKER.length;
 		const tail = line.slice(afterMarker);
-		const replacedTail = tail.replace(/\x1b\[7m[^\x1b]*\x1b\[0m/, openStyle);
+		const replacedTail = tail.replace(/\x1b\[7m([^\x1b]*)\x1b\[0m/, replacement);
 		return line.slice(0, afterMarker) + replacedTail;
 	}
 
 	// Unfocused: restyle only the first reverse-video span with no nested escapes.
-	return line.replace(/\x1b\[7m[^\x1b]*\x1b\[0m/, openStyle);
+	return line.replace(/\x1b\[7m([^\x1b]*)\x1b\[0m/, replacement);
 }
 
 /**
@@ -116,13 +118,25 @@ export class CodexStyleEditor extends CustomEditor {
 		super(tui, theme, keybindings, { paddingX: 1 });
 	}
 
+	private blinkOn = true;
+	private blinkTimer: ReturnType<typeof setInterval> | undefined;
+
+	private ensureBlink(): void {
+		if (this.blinkTimer) return;
+		this.blinkTimer = setInterval(() => {
+			this.blinkOn = !this.blinkOn;
+			this.tui.requestRender(true);
+		}, 530);
+	}
+
 	render(width: number): string[] {
+		this.ensureBlink();
 		// CC style: flat full-width rules (pi's native editor borders) with an
 		// gold `❯` prompt, gold bar cursor, and
 		// a dim placeholder when empty.
 		const open = this.cursorOpen();
 		const prompt = `\x1b[38;2;232;216;176m❯\x1b[39m`; // same gold as the title/text
-		const lines = super.render(width).map((line) => restyleEditorCursor(line, open));
+		const lines = super.render(width).map((line) => restyleEditorCursor(line, open, this.blinkOn));
 
 		// pi appends autocomplete rows AFTER the bottom border (menu pops below
 		// the prompt). Claude Code pops the menu UP, so lift those rows above
@@ -140,14 +154,15 @@ export class CodexStyleEditor extends CustomEditor {
 
 		const firstContent = core.findIndex((l) => !isEditorBorderLine(stripAnsi(l)));
 		if (firstContent !== -1) {
-			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏text`
-			let line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
-			// The editor pads lines to full width; trim before appending so the
-			// placeholder isn't cut off by truncation.
-			if (this.placeholder && /^\s*$/.test(this.getText())) {
-				line = `${line.trimEnd()}\x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`;
-			}
+			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏`
+			const line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
 			core[firstContent] = truncateToWidth(line, width, "");
+			// Empty editor: the Try suggestion sits on its own line below the
+			// prompt row, like CC.
+			if (this.placeholder && /^\s*$/.test(this.getText())) {
+				const phLine = truncateToWidth(`  \x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`, width, "");
+				core.splice(firstContent + 1, 0, phLine);
+			}
 		}
 		return [...autocompleteRows, ...core];
 	}
