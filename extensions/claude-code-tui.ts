@@ -488,9 +488,9 @@ export default function (pi: ExtensionAPI) {
 		setMode(ctx, mode === "auto" ? "plan" : "auto");
 	};
 
-	// Alt+P toggles Plan/Auto (CC uses shift+tab, which pi reserves for
+	// Ctrl+Tab toggles Plan/Auto (CC uses shift+tab, which pi reserves for
 	// thinking-level cycling)
-	pi.registerShortcut("alt+p", {
+	pi.registerShortcut("ctrl+tab", {
 		description: "Toggle Plan Mode / Auto Mode",
 		handler: async (ctx) => toggleMode(ctx),
 	});

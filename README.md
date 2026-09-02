@@ -39,12 +39,14 @@ Please install the pi package "pi-claude-code-tui" for me:
 | --- | --- |
 | `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
 | `/claude-verb` | Reroll the spinner verb |
-| `/mode` or `Alt+P` | Toggle **Plan Mode** / **Auto Mode** |
+| `/mode` or `Ctrl+Tab` | Toggle **Plan Mode** / **Auto Mode** |
 
 ### Modes
 
 - **Auto Mode** — normal full tool access (default)
 - **Plan Mode** — read-only research: `edit`/`write` tools are disabled and the model is instructed to explore and present a plan instead of making changes
+
+> **Ghostty note:** Ghostty binds `Ctrl+Tab` to tab switching by default. If the shortcut doesn't reach pi, add `keybind = ctrl+tab=unbind` to your Ghostty config.
 
 The current mode is always shown at the left of the hint line below the prompt bar.
 
