@@ -25,10 +25,14 @@ import { CodexStyleEditor, cursorOpenFromFgAnsi } from "./lib/claude-tui-editor.
 // --- Claude Code palette (dark theme, from src/utils/theme.ts) ---
 const CLAUDE = "\x1b[38;2;215;119;87m";
 const CLAUDE_DIM = "\x1b[38;2;153;153;153m";
+const CLAUDE_WARNING = "\x1b[38;2;255;193;7m";
+const CLAUDE_PLAN = "\x1b[38;2;72;150;140m";
 const RESET = "\x1b[39m";
 
 const orange = (s: string) => `${CLAUDE}${s}${RESET}`;
 const gray = (s: string) => `${CLAUDE_DIM}${s}${RESET}`;
+const yellow = (s: string) => `${CLAUDE_WARNING}${s}${RESET}`;
+const teal = (s: string) => `${CLAUDE_PLAN}${s}${RESET}`;
 
 // --- Spinner frames (src/components/Spinner/utils.ts getDefaultCharacters) ---
 const BLOSSOM = ["·", "✢", "✱", "✶", "✻", "✽"];
@@ -169,8 +173,12 @@ const ccResult = (
 
 	// Errors: red summary lines, like CC's `⎿  Error: ...`
 	if (isError) {
-		const rows = lines.slice(0, options.expanded ? lines.length : 4);
-		return emit((rows.length ? rows : ["Error"]).map((l) => theme.fg("error", l)));
+		const rows = lines.slice(0, options.expanded ? lines.length : 3);
+		const logical = (rows.length ? rows : ["Error"]).map((l) => theme.fg("error", l));
+		if (!options.expanded && lines.length > 3) {
+			logical.push(theme.fg("dim", `... +${lines.length - 3} lines (${keyHint("app.tools.expand", "to expand")})`));
+		}
+		return emit(logical);
 	}
 
 	// Edit: summary + colored diff
@@ -178,7 +186,12 @@ const ccResult = (
 		const diff = (result as { details?: { diff?: string } }).details?.diff;
 		const logical = [lines[0] || "Updated file"];
 		if (diff) logical.push(...renderDiff(diff).split("\n"));
-		return emit(options.expanded ? logical : logical.slice(0, 12));
+		if (options.expanded) return emit(logical);
+		const display = logical.slice(0, 3);
+		if (logical.length > 3) {
+			display.push(theme.fg("dim", `... +${logical.length - 3} lines (${keyHint("app.tools.expand", "to expand")})`));
+		}
+		return emit(display);
 	}
 
 	// Read collapsed: one-line summary, like CC
@@ -193,7 +206,7 @@ const ccResult = (
 	}
 
 	// Generic collapsed preview
-	const maxLines = options.expanded ? lines.length : 6;
+	const maxLines = options.expanded ? lines.length : 3;
 	const display = lines.slice(0, maxLines);
 	const remaining = lines.length - display.length;
 	const logical = [...display];
@@ -259,9 +272,11 @@ export default function (pi: ExtensionAPI) {
 	let toolsBeforePlan: string[] | undefined;
 	let dockTui: { requestRender: (force?: boolean) => void } | null = null;
 
-	const MODE_LABELS: Record<Mode, (theme: CCTheme) => string> = {
-		auto: (t) => t.fg("muted", "⚡ Auto Mode"),
-		plan: (t) => t.fg("warning", "⏸ Plan Mode"),
+	// Mode banner, verbatim from CC: symbols + colors of its dark theme
+	// (auto = warning rgb(255,193,7), plan = planMode rgb(72,150,140))
+	const MODE_LABELS: Record<Mode, string> = {
+		auto: `${yellow("⏵⏵ auto mode on")}${gray(" (shift+tab to cycle)")}`,
+		plan: `${teal("⏸ plan mode on")}${gray(" (shift+tab to cycle)")}`,
 	};
 
 	// --- Editor: flat rules + gold ❯ + blinking bar cursor ---
@@ -392,10 +407,10 @@ export default function (pi: ExtensionAPI) {
 				dispose: unsub,
 				invalidate() {},
 				render(width: number): string[] {
-					const modeLabel = (MODE_LABELS[mode] as (t: CCTheme) => string)(theme);
+					const modeLabel = MODE_LABELS[mode];
 					const hints = theme.fg(
 						"dim",
-						"· ! for bash mode · ctrl+p model · shift+tab mode · ctrl+o tools",
+						"· ! for bash mode · ctrl+p model · ctrl+o tools",
 					);
 					return [truncateToWidth(`${modeLabel} ${hints}`, width)];
 				},
