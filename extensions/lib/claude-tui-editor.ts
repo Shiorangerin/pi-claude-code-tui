@@ -124,7 +124,14 @@ export class CodexStyleEditor extends CustomEditor {
 		const prompt = `\x1b[38;2;232;216;176m❯\x1b[39m`; // same gold as the title/text
 		const lines = super.render(width).map((line) => restyleEditorCursor(line, open));
 
-		const firstContent = lines.findIndex((l) => !isEditorBorderLine(stripAnsi(l)));
+		// pi appends autocomplete rows AFTER the bottom border (menu pops below
+		// the prompt). Claude Code pops the menu UP, so lift those rows above
+		// the box.
+		const bottomIdx = findBottomBorderIndex(lines);
+		const autocompleteRows = lines.slice(bottomIdx + 1);
+		const core = lines.slice(0, bottomIdx + 1);
+
+		const firstContent = core.findIndex((l) => !isEditorBorderLine(stripAnsi(l)));
 		if (firstContent !== -1) {
 			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏text`
 			let line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
@@ -135,6 +142,6 @@ export class CodexStyleEditor extends CustomEditor {
 			}
 			lines[firstContent] = truncateToWidth(line, width, "");
 		}
-		return lines;
+		return [...autocompleteRows, ...core];
 	}
 }
