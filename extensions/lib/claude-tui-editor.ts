@@ -113,7 +113,6 @@ export class CodexStyleEditor extends CustomEditor {
 		theme: EditorTheme,
 		keybindings: KeybindingsManager,
 		private readonly cursorOpen: () => string,
-		private readonly placeholder?: () => string,
 	) {
 		super(tui, theme, keybindings, { paddingX: 1 });
 	}
@@ -131,9 +130,8 @@ export class CodexStyleEditor extends CustomEditor {
 
 	render(width: number): string[] {
 		this.ensureBlink();
-		// CC style: flat full-width rules (pi's native editor borders) with an
-		// gold `❯` prompt, gold bar cursor, and
-		// a dim placeholder when empty.
+		// CC style: flat full-width rules (pi's native editor borders), a gold
+		// `❯` prompt and a blinking gold bar cursor.
 		const open = this.cursorOpen();
 		const prompt = `\x1b[38;2;232;216;176m❯\x1b[39m`; // same gold as the title/text
 		const lines = super.render(width).map((line) => restyleEditorCursor(line, open, this.blinkOn));
@@ -156,17 +154,7 @@ export class CodexStyleEditor extends CustomEditor {
 		if (firstContent !== -1) {
 			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏`
 			const line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
-			// Empty editor: the Try suggestion is drawn on the SAME row, layered
-			// under the blinking cursor (z-order below, like CC).
-			if (this.placeholder && /^\s*$/.test(this.getText())) {
-				core[firstContent] = truncateToWidth(
-					`${line.trimEnd()}\x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`,
-					width,
-					"",
-				);
-			} else {
-				core[firstContent] = truncateToWidth(line, width, "");
-			}
+			core[firstContent] = truncateToWidth(line, width, "");
 		}
 		return [...autocompleteRows, ...core];
 	}

@@ -253,30 +253,71 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Editor: flat rules + orange ❯ + rotating "Try ..." placeholder ---
 	let activeEditor: CodexStyleEditor | null = null;
-	const SUGGESTIONS = [
-		'Try "fix typecheck errors"',
-		'Try "how does this project work?"',
-		'Try "summarize TODO.md"',
-		'Try "write a test for the parser"',
-		'Try "find and fix the race condition"',
-		'Try "explain the build pipeline"',
-		'Try "refactor the duplicated code"',
-		'Try "add error handling to the CLI"',
-	];
-	let suggestion = randomOf(SUGGESTIONS);
+	// --- Mode state: Plan (read-only) vs Auto (full) ---
+	type Mode = "auto" | "plan";
+	let mode: Mode = "auto";
+	let toolsBeforePlan: string[] | undefined;
+	let dockTui: { requestRender: (force?: boolean) => void } | null = null;
+
+	const MODE_LABELS: Record<Mode, (theme: CCTheme) => string> = {
+		auto: (t) => t.fg("muted", "⚡ Auto Mode"),
+		plan: (t) => t.fg("warning", "⏸ Plan Mode"),
+	};
+
+	// --- Editor: flat rules + gold ❯ + blinking bar cursor ---
 	const setEditor = (ctx: ExtensionContext) => {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-			activeEditor = new CodexStyleEditor(
-				tui,
-				theme,
-				keybindings,
-				() => cursorOpenFromFgAnsi(ctx.ui.theme.getFgAnsi("accent")),
-				() => suggestion,
+			activeEditor = new CodexStyleEditor(tui, theme, keybindings, () =>
+				cursorOpenFromFgAnsi(ctx.ui.theme.getFgAnsi("accent")),
 			);
 			return activeEditor;
 		});
 	};
 
+	let footerDataBranch: string | null = null;
+
+	// --- Status widget: compact CC statusline, right-aligned ABOVE the prompt ---
+	const setStatusWidget = (ctx: ExtensionContext) => {
+		ctx.ui.setWidget("cc-status", (tui, theme) => ({
+			invalidate() {},
+			render(width: number): string[] {
+				dockTui = tui;
+				const modelName = currentModelName || ctx.model?.name || ctx.model?.id || "no model";
+				const sep = theme.fg("dim", " │ ");
+
+				let used = 0;
+				let cost = 0;
+				for (const entry of ctx.sessionManager.getBranch()) {
+					if (entry.type === "message" && entry.message.role === "assistant") {
+						const usage = (entry.message as { usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: { total?: number } } }).usage;
+						if (usage) {
+							used = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+							cost += usage.cost?.total ?? 0;
+						}
+					}
+				}
+				const win = currentContextWindow || ctx.model?.contextWindow || 0;
+				const pct = win > 0 ? Math.min(100, Math.round((used / win) * 100)) : 0;
+
+				const muted = (s: string) => theme.fg("muted", s);
+				const parts = [muted(modelName)];
+				if (win > 0 && used > 0) {
+					parts.push(
+						`${theme.fg("dim", "Context ")}${muted(`${pct}%`)}${theme.fg("dim", ` (${formatTokens(used)}/${formatTokens(win)})`)}`,
+					);
+				}
+				if (cost > 0) {
+					parts.push(muted(`$${cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4)}`));
+				}
+				const branch = footerDataBranch;
+				if (branch) parts.push(theme.fg("dim", branch));
+
+				const line = parts.join(sep);
+				const pad = " ".repeat(Math.max(0, width - visibleWidth(line)));
+				return [truncateToWidth(pad + line, width)];
+			},
+		}));
+	};
 	// --- Tool rendering overrides: delegate execute to real built-ins ---
 	const registerToolOverrides = () => {
 		const cwd = process.cwd();
@@ -338,56 +379,22 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	// --- Footer: hint line (all real pi keybindings) + CC status line ---
+	// --- Footer: mode indicator + keybinding hints (below the editor) ---
 	const setFooter = (ctx: ExtensionContext) => {
 		ctx.ui.setFooter((tui, theme, footerData) => {
+			dockTui = tui;
+			footerDataBranch = footerData.getGitBranch();
 			const unsub = footerData.onBranchChange(() => tui.requestRender());
 			return {
 				dispose: unsub,
 				invalidate() {},
 				render(width: number): string[] {
-					// Hint line: only features that actually exist in pi
+					const modeLabel = (MODE_LABELS[mode] as (t: CCTheme) => string)(theme);
 					const hints = theme.fg(
 						"dim",
-						"! for bash mode · ctrl+p model · shift+tab thinking · ctrl+o tools",
+						"· ! for bash mode · ctrl+p model · shift+tab thinking · ctrl+o tools",
 					);
-
-					const modelName = currentModelName || ctx.model?.name || ctx.model?.id || "no model";
-					const sep = theme.fg("dim", " │ ");
-
-					// Context usage from the last assistant message
-					let used = 0;
-					let cost = 0;
-					for (const entry of ctx.sessionManager.getBranch()) {
-						if (entry.type === "message" && entry.message.role === "assistant") {
-							const usage = (entry.message as { usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: { total?: number } } }).usage;
-							if (usage) {
-								used = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-								cost += usage.cost?.total ?? 0;
-							}
-						}
-					}
-					const win = currentContextWindow || ctx.model?.contextWindow || 0;
-					const pct = win > 0 ? Math.min(100, Math.round((used / win) * 100)) : 0;
-
-					const muted = (s: string) => theme.fg("muted", s);
-					const parts = [muted(modelName)];
-					if (win > 0 && used > 0) {
-						parts.push(
-							`${theme.fg("dim", "Context ")}${muted(`${pct}%`)}${theme.fg("dim", ` (${formatTokens(used)}/${formatTokens(win)})`)}`,
-						);
-					}
-					if (cost > 0) {
-						parts.push(muted(`$${cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4)}`));
-					}
-					const branch = footerData.getGitBranch();
-					if (branch) parts.push(theme.fg("dim", branch));
-
-					const status = truncateToWidth(parts.join(sep), width);
-					// Hint line only while the editor is empty, like CC
-					if (activeEditor && activeEditor.getText().length > 0) {
-						return [status];
-					}
-					return [truncateToWidth(hints, width), status];
+					return [truncateToWidth(`${modeLabel} ${hints}`, width)];
 				},
 			};
 		});
@@ -427,7 +434,6 @@ export default function (pi: ExtensionAPI) {
 		if (!enabled || runStart === 0) return;
 		const elapsed = Date.now() - runStart;
 		runStart = 0;
-		suggestion = randomOf(SUGGESTIONS);
 		if (elapsed >= 1000) {
 			ctx.ui.notify(orange(`✻ ${randomOf(TURN_COMPLETION_VERBS)} for ${formatDuration(elapsed)}`), "info");
 		}
@@ -441,6 +447,7 @@ export default function (pi: ExtensionAPI) {
 		currentContextWindow = ctx.model?.contextWindow || 0;
 		setHeader(ctx);
 		setEditor(ctx);
+		setStatusWidget(ctx);
 		setFooter(ctx);
 		applyWorking(ctx);
 	};
@@ -455,9 +462,60 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setHeader(undefined);
 		ctx.ui.setEditorComponent(undefined);
 		ctx.ui.setFooter(undefined);
+		ctx.ui.setWidget("cc-status", undefined);
+		if (toolsBeforePlan) {
+			pi.setActiveTools(toolsBeforePlan);
+			toolsBeforePlan = undefined;
+		}
 		ctx.ui.setWorkingIndicator();
 		ctx.ui.setWorkingMessage();
 	};
+
+	const setMode = (ctx: ExtensionContext, next: Mode) => {
+		if (mode === next) return;
+		mode = next;
+		if (next === "plan") {
+			toolsBeforePlan = pi.getActiveTools();
+			pi.setActiveTools(toolsBeforePlan.filter((t) => t !== "edit" && t !== "write"));
+		} else if (toolsBeforePlan) {
+			pi.setActiveTools(toolsBeforePlan);
+			toolsBeforePlan = undefined;
+		}
+		dockTui?.requestRender(true);
+	};
+
+	const toggleMode = (ctx: ExtensionContext) => {
+		setMode(ctx, mode === "auto" ? "plan" : "auto");
+	};
+
+	// Alt+P toggles Plan/Auto (CC uses shift+tab, which pi reserves for
+	// thinking-level cycling)
+	pi.registerShortcut("alt+p", {
+		description: "Toggle Plan Mode / Auto Mode",
+		handler: async (ctx) => toggleMode(ctx),
+	});
+
+	pi.registerCommand("mode", {
+		description: "Toggle Plan Mode / Auto Mode (or: /mode plan, /mode auto)",
+		handler: async (args, ctx) => {
+			const a = args.trim().toLowerCase();
+			if (a === "plan" || a === "auto") setMode(ctx, a);
+			else toggleMode(ctx);
+		},
+	});
+
+	pi.on("before_agent_start", async (event) => {
+		if (mode !== "plan") return;
+		const directive = [
+
+			"## Plan Mode",
+			"Plan Mode is ACTIVE. In this turn you are a read-only researcher:",
+			"- Do NOT edit, create, or delete any files.",
+			"- Explore the codebase, then present a concise, numbered implementation plan.",
+			"- Wait for explicit user approval before proposing to make changes.",
+		].join("\n");
+		return { systemPrompt: `${event.systemPrompt}\n\n${directive}` };
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		enable(ctx);
