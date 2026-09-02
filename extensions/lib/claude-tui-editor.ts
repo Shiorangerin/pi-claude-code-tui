@@ -118,7 +118,7 @@ export class CodexStyleEditor extends CustomEditor {
 
 	render(width: number): string[] {
 		// CC style: flat full-width rules (pi's native editor borders) with an
-		// orange `❯` prompt on the first content line, accent block cursor, and
+		// gold `❯` prompt, gold bar cursor, and
 		// a dim placeholder when empty.
 		const open = this.cursorOpen();
 		const prompt = `\x1b[38;2;232;216;176m❯\x1b[39m`; // same gold as the title/text
@@ -135,7 +135,6 @@ export class CodexStyleEditor extends CustomEditor {
 			.map((l) =>
 				l
 					.replace(/\x1b\[38;2;215;119;87m/g, "\x1b[38;2;177;185;249m")
-					.replace(/\x1b\[38;2;153;153;153m/g, "\x1b[38;2;177;185;249m"),
 			);
 		const core = lines.slice(0, bottomIdx + 1);
 
@@ -148,7 +147,7 @@ export class CodexStyleEditor extends CustomEditor {
 			if (this.placeholder && /^\s*$/.test(this.getText())) {
 				line = `${line.trimEnd()}\x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`;
 			}
-			lines[firstContent] = truncateToWidth(line, width, "");
+			core[firstContent] = truncateToWidth(line, width, "");
 		}
 		return [...autocompleteRows, ...core];
 	}
