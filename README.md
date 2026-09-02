@@ -40,6 +40,20 @@ Please install the pi package "pi-claude-code-tui" for me:
 | `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
 | `/claude-verb` | Reroll the spinner verb |
 
+## Recommended settings
+
+Two Claude Code behaviors live in your pi settings (not in this package), add them to `~/.pi/agent/settings.json`:
+
+```json
+{
+  "tuiMode": "fullscreen",
+  "outputPad": 0
+}
+```
+
+- `tuiMode: "fullscreen"` — pins the prompt bar and status line to the bottom of the terminal with a scrollable transcript (how Claude Code behaves)
+- `outputPad: 0` — sent messages start flush at column 0
+
 ## Notes
 
 - The theme assumes a dark terminal.
