@@ -2,7 +2,8 @@
 
 A [pi](https://pi.dev) package that recreates the look and feel of Anthropic's Claude Code TUI.
 
-![preview](https://raw.githubusercontent.com/Shiorangerin/pi-claude-code-tui/main/assets/preview.png)
+<img width="691" height="448" alt="image" src="https://github.com/user-attachments/assets/3a030401-ed14-4705-b865-fdaf35fcba4f" />
+
 
 ## What you get
 
