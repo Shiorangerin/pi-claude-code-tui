@@ -128,6 +128,18 @@ export class CodexStyleEditor extends CustomEditor {
 		}, 530);
 	}
 
+	// Shift+Tab (backtab) toggles Plan/Auto Mode. Intercepted here, before
+	// pi's keybinding pipeline can route it to the built-in thinking-cycle.
+	onShiftTab?: () => void;
+
+	handleInput(data: string): void {
+		if (data === "\x1b[Z") {
+			this.onShiftTab?.();
+			return;
+		}
+		super.handleInput(data);
+	}
+
 	render(width: number): string[] {
 		this.ensureBlink();
 		// CC style: flat full-width rules (pi's native editor borders), a gold

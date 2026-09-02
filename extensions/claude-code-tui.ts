@@ -270,6 +270,9 @@ export default function (pi: ExtensionAPI) {
 			activeEditor = new CodexStyleEditor(tui, theme, keybindings, () =>
 				cursorOpenFromFgAnsi(ctx.ui.theme.getFgAnsi("accent")),
 			);
+			// Shift+Tab toggles Plan/Auto (intercepted in the editor before pi's
+			// built-in thinking-cycle can claim it)
+			activeEditor.onShiftTab = () => toggleMode();
 			return activeEditor;
 		});
 	};
@@ -392,7 +395,7 @@ export default function (pi: ExtensionAPI) {
 					const modeLabel = (MODE_LABELS[mode] as (t: CCTheme) => string)(theme);
 					const hints = theme.fg(
 						"dim",
-						"· ! for bash mode · ctrl+p model · shift+tab thinking · ctrl+o tools",
+						"· ! for bash mode · ctrl+p model · shift+tab mode · ctrl+o tools",
 					);
 					return [truncateToWidth(`${modeLabel} ${hints}`, width)];
 				},
@@ -471,7 +474,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setWorkingMessage();
 	};
 
-	const setMode = (ctx: ExtensionContext, next: Mode) => {
+	const setMode = (next: Mode) => {
 		if (mode === next) return;
 		mode = next;
 		if (next === "plan") {
@@ -484,23 +487,16 @@ export default function (pi: ExtensionAPI) {
 		dockTui?.requestRender(true);
 	};
 
-	const toggleMode = (ctx: ExtensionContext) => {
-		setMode(ctx, mode === "auto" ? "plan" : "auto");
+	const toggleMode = () => {
+		setMode(mode === "auto" ? "plan" : "auto");
 	};
-
-	// Ctrl+Tab toggles Plan/Auto (CC uses shift+tab, which pi reserves for
-	// thinking-level cycling)
-	pi.registerShortcut("ctrl+tab", {
-		description: "Toggle Plan Mode / Auto Mode",
-		handler: async (ctx) => toggleMode(ctx),
-	});
 
 	pi.registerCommand("mode", {
 		description: "Toggle Plan Mode / Auto Mode (or: /mode plan, /mode auto)",
-		handler: async (args, ctx) => {
+		handler: async (args) => {
 			const a = args.trim().toLowerCase();
-			if (a === "plan" || a === "auto") setMode(ctx, a);
-			else toggleMode(ctx);
+			if (a === "plan" || a === "auto") setMode(a);
+			else toggleMode();
 		},
 	});
 

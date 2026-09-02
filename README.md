@@ -39,14 +39,12 @@ Please install the pi package "pi-claude-code-tui" for me:
 | --- | --- |
 | `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
 | `/claude-verb` | Reroll the spinner verb |
-| `/mode` or `Ctrl+Tab` | Toggle **Plan Mode** / **Auto Mode** |
+| `Shift+Tab` or `/mode` | Toggle **Plan Mode** / **Auto Mode** |
 
 ### Modes
 
 - **Auto Mode** — normal full tool access (default)
 - **Plan Mode** — read-only research: `edit`/`write` tools are disabled and the model is instructed to explore and present a plan instead of making changes
-
-> **Ghostty note:** Ghostty binds `Ctrl+Tab` to tab switching by default. If the shortcut doesn't reach pi, add `keybind = ctrl+tab=unbind` to your Ghostty config.
 
 The current mode is always shown at the left of the hint line below the prompt bar.
 
@@ -63,6 +61,7 @@ Two Claude Code behaviors live in your pi settings (not in this package), add th
 ```
 
 - `tuiMode: "fullscreen"` — pins the prompt bar and status line to the bottom of the terminal with a scrollable transcript (how Claude Code behaves)
+- Note: `Shift+Tab` toggles modes instead of pi's built-in thinking-level cycling
 - `outputPad: 0` — sent messages start flush at column 0
 - `quietStartup: true` — hide the startup resource lists (the custom header stays)
 
