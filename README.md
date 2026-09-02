@@ -1,0 +1,52 @@
+# pi-claude-code-tui
+
+A [pi](https://pi.dev) package that recreates the look and feel of Anthropic's Claude Code TUI.
+
+![preview](https://raw.githubusercontent.com/Shiorangerin/pi-claude-code-tui/main/assets/preview.png)
+
+## What you get
+
+- **Startup header** — the pixel Clawd mascot next to a bold `Claude Code` title, your active model name and cwd (third-party model names are shown as-is)
+- **Slim prompt bar** — flat rules, gold `❯` prompt, gold bar cursor, and a dim rotating `Try "..."` suggestion when the editor is empty
+- **CC-style tool rows** — `⏺ Tool(args)` with a dim `⎿` gutter for output, collapsed read summaries, colored diffs, red errors (built-in tool execution is untouched — rendering only)
+- **Spinner verbs** — the full set of 190 Claude Code playful verbs (`Pondering…`, `Vibing…`, `Flibbertigibbeting…`) on a blossom spinner, with a `✻ Worked for 12s` completion line
+- **Status line** — `model │ Context 23% (50k/200k) │ $0.042 │ branch`
+- **History** — sent messages render as a slim full-width bar with a dim `❯` prefix
+- **claude-code theme** — the Claude Code dark palette applied to the whole TUI
+
+Everything is display-only: nothing changes what gets sent to the model.
+
+## Install
+
+```bash
+pi install git:github.com/Shiorangerin/pi-claude-code-tui
+```
+
+Then open `/settings` in pi and pick the **claude-code** theme. Restart pi.
+
+### Or just paste this to your AI assistant
+
+```text
+Please install the pi package "pi-claude-code-tui" for me:
+1. Run: pi install git:github.com/Shiorangerin/pi-claude-code-tui
+2. Open pi, run /settings, and select the "claude-code" theme
+3. Restart pi
+```
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
+| `/claude-verb` | Reroll the spinner verb |
+
+## Notes
+
+- The theme assumes a dark terminal.
+- Tool row styling overrides built-in renderers for `read`, `bash`, `grep`, `find`, `ls`, `write`, `edit`; execution always delegates to pi's built-in implementations.
+- The editor component is adapted from the MIT-licensed [pi-claude-code-tui](https://github.com/Phoobobo/pi-claude-code-tui) by Phoobobo.
+- Claude Code is a product of Anthropic. This package only mimics its terminal aesthetics and ships none of its code.
+
+## License
+
+MIT

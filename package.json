@@ -1,0 +1,21 @@
+{
+  "name": "@shiorangerin/pi-claude-code-tui",
+  "version": "1.0.0",
+  "description": "Claude Code-style TUI for pi: Clawd header, slim prompt bar, CC tool rows, spinner verbs, status line",
+  "type": "module",
+  "keywords": ["pi-package", "pi", "tui", "theme", "claude", "claude-code"],
+  "license": "MIT",
+  "author": "Shiorangerin",
+  "homepage": "https://github.com/Shiorangerin/pi-claude-code-tui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shiorangerin/pi-claude-code-tui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Shiorangerin/pi-claude-code-tui/issues"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "themes": ["./themes"]
+  }
+}
