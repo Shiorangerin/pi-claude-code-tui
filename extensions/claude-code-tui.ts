@@ -367,14 +367,15 @@ export default function (pi: ExtensionAPI) {
 					const win = currentContextWindow || ctx.model?.contextWindow || 0;
 					const pct = win > 0 ? Math.min(100, Math.round((used / win) * 100)) : 0;
 
-					const parts = [modelName];
+					const muted = (s: string) => theme.fg("muted", s);
+					const parts = [muted(modelName)];
 					if (win > 0 && used > 0) {
 						parts.push(
-							`${theme.fg("dim", "Context ")}${pct}%${theme.fg("dim", ` (${formatTokens(used)}/${formatTokens(win)})`)}`,
+							`${theme.fg("dim", "Context ")}${muted(`${pct}%`)}${theme.fg("dim", ` (${formatTokens(used)}/${formatTokens(win)})`)}`,
 						);
 					}
 					if (cost > 0) {
-						parts.push(`$${cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4)}`);
+						parts.push(muted(`$${cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4)}`));
 					}
 					const branch = footerData.getGitBranch();
 					if (branch) parts.push(theme.fg("dim", branch));
@@ -526,7 +527,20 @@ export default function (pi: ExtensionAPI) {
 	// History user messages: CC-style slim bar — dim `❯` at column 0 (outputPad
 	// setting is 0) on a one-row near-black background spanning the content
 	// width. Display-only: session and model context keep the original text.
+	// CC renders conversation text explicitly white; pi leaves it at the
+	// terminal default (which can be any color, e.g. Gruvbox cream). Force
+	// white on plain lines; markdown-styled lines (headings, lists, code,
+	// tables) keep their own theme colors.
+	const WHITE = "\x1b[38;2;255;255;255m";
+	const plainLine = (l: string) => !/^(\s*[#>*`\-|]|\s*\d+\.)/.test(l) && l.trim() !== "";
+
 	pi.registerMarkdownTransformer((markdown, { messageType, availableWidth }) => {
+		if (messageType === "assistant") {
+			return markdown
+				.split("\n")
+				.map((l) => (plainLine(l) ? `${WHITE}${l}${RESET}` : l))
+				.join("\n");
+		}
 		if (messageType !== "user") return markdown;
 		const bg = "\x1b[48;2;55;55;55m"; // CC userMessageBackground rgb(55,55,55)
 		const bgOff = "\x1b[49m";
@@ -536,7 +550,8 @@ export default function (pi: ExtensionAPI) {
 		return markdown
 			.split("\n")
 			.map((line, i) => {
-				const content = i === 0 ? `${gray("❯")} ${line}` : line;
+				const text = `${WHITE}${line}${RESET}`;
+				const content = i === 0 ? `${gray("❯")} ${text}` : text;
 				const pad = "\u00A0".repeat(Math.max(0, width - visibleWidth(content) - 1));
 				return `${bg}${content}${pad}${bgOff}`;
 			})
