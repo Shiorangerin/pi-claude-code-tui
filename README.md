@@ -9,7 +9,8 @@ A [pi](https://pi.dev) package that recreates the look and feel of Anthropic's C
 
 - **Startup header** — the pixel Clawd mascot next to a bold `Claude Code` title, your active model name and cwd (third-party model names are shown as-is)
 - **Slim prompt bar** — flat rules, gold `❯` prompt, gold bar cursor, and a dim rotating `Try "..."` suggestion when the editor is empty
-- **CC-style tool rows** — `⏺ Tool(args)` with a dim `⎿` gutter for output, collapsed read summaries, colored diffs, red errors (built-in tool execution is untouched — rendering only)
+- **CC-style tool rows** — `⏺ Tool(args)` with a dim `⎿` gutter for output, colored diffs, red errors (built-in tool execution is untouched — rendering only). Collapsed output is capped at **3 physical rows** (a single minified JSON line can wrap into dozens of terminal rows, so collapse counts wrapped rows, not logical lines) with an expand hint.
+- **Third-party / MCP tool fallback** — tools registered by other extensions (MCP adapters, `task`, …) ship no renderers and would flood the transcript with pi's 10-line fallback; the extension prototype-patches `ToolExecutionComponent` so any tool without its own `renderCall`/`renderResult` gets the same CC-style collapsed rows.
 - **Spinner verbs** — the full set of 190 Claude Code playful verbs (`Pondering…`, `Vibing…`, `Flibbertigibbeting…`) on a blossom spinner, with a `✻ Worked for 12s` completion line
 - **Status line** — `model │ Context 23% (50k/200k) │ $0.042 │ branch`
 - **History** — sent messages render as a slim full-width bar with a dim `❯` prefix

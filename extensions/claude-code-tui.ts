@@ -7,7 +7,10 @@
  *   pi-claude-code-tui 包，见 lib/claude-tui-editor.ts）
  * - 工具行：用公共 API 实例化内置工具并原样委托 execute，只覆写渲染为
  *   CC 风格 `⏺ Tool(args)` + `⎿  输出`（错误红色、edit 带彩色 diff、
- *   read 折叠摘要），renderShell "self" 去掉背景盒
+ *   read 折叠摘要），renderShell "self" 去掉背景盒；折叠按物理行封顶
+ *   3 行（长 JSON 行 wrap 后也不会刷屏）
+ * - 第三方/MCP 工具兜底：原型补丁 ToolExecutionComponent，凡无自带
+ *   renderCall/renderResult 的工具（MCP、task 等）同样渲染为折叠的 CC 行
  * - Spinner：✻ 花型动画 + Claude 橙 + 190 个 Claude Code 俏皮动词轮换 + (esc to interrupt · Ns)
  * - 收尾：✻ Worked for 12s（CC 过去式动词）
  * - 状态栏：模型 │ Context 23% (50k/200k) │ $0.042 │ 分支
@@ -17,7 +20,7 @@
  *   /claude-verb — 立即换一个随机动词
  */
 
-import { VERSION, keyHint, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
+import { VERSION, keyHint, ToolExecutionComponent, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CodexStyleEditor, cursorOpenFromFgAnsi } from "./lib/claude-tui-editor.ts";
@@ -142,7 +145,11 @@ const ccCall = (theme: CCTheme, name: string, args: string, isError: boolean) =>
 });
 
 // `⎿  output` result rows: dim gutter, output wrapped and aligned under the
-// gutter, collapsed preview with expand hint, red on error.
+// gutter, collapsed preview with expand hint, red on error. Collapse is
+// capped at MAX_RESULT_ROWS PHYSICAL rows: a single minified JSON line can
+// wrap into dozens of terminal rows, so counting logical lines is not enough.
+const MAX_RESULT_ROWS = 3;
+
 const ccResult = (
 	theme: CCTheme,
 	name: string,
@@ -156,29 +163,28 @@ const ccResult = (
 	const cont = "     ";
 	const paint = (s: string) => (isError ? theme.fg("error", s) : theme.fg("toolOutput", s));
 	const wrapW = Math.max(10, width - cont.length);
+	const expandHint = theme.fg("dim", `(${keyHint("app.tools.expand", "to expand")})`);
 
+	// Wraps pre-colored logical lines into physical rows and, unless expanded,
+	// caps the block at MAX_RESULT_ROWS rows total (expand hint included).
 	const emit = (logicalLines: string[]): string[] => {
 		const physical: string[] = [];
-		logicalLines.forEach((line, i) => {
-			wrapTextWithAnsi(line, wrapW).forEach((seg, j) => {
-				physical.push(`${i === 0 && j === 0 ? gutter : cont}${seg}`);
-			});
-		});
-		return physical;
+		for (const line of logicalLines) physical.push(...wrapTextWithAnsi(line, wrapW));
+		if (options.expanded || physical.length <= MAX_RESULT_ROWS) {
+			return physical.map((l, i) => `${i === 0 ? gutter : cont}${l}`);
+		}
+		const shown = physical.slice(0, MAX_RESULT_ROWS - 1);
+		const rows = shown.map((l, i) => `${i === 0 ? gutter : cont}${l}`);
+		rows.push(`${cont}${theme.fg("dim", `... +${physical.length - shown.length} lines`)} ${expandHint}`);
+		return rows;
 	};
-	// paint is applied by callers; emit only wraps and aligns.
 
 	const output = textOfResult(result).replace(/\n+$/, "");
 	const lines = output ? output.split("\n") : [];
 
 	// Errors: red summary lines, like CC's `⎿  Error: ...`
 	if (isError) {
-		const rows = lines.slice(0, options.expanded ? lines.length : 3);
-		const logical = (rows.length ? rows : ["Error"]).map((l) => theme.fg("error", l));
-		if (!options.expanded && lines.length > 3) {
-			logical.push(theme.fg("dim", `... +${lines.length - 3} lines (${keyHint("app.tools.expand", "to expand")})`));
-		}
-		return emit(logical);
+		return emit((lines.length ? lines : ["Error"]).map((l) => theme.fg("error", l)));
 	}
 
 	// Edit: summary + colored diff
@@ -186,12 +192,7 @@ const ccResult = (
 		const diff = (result as { details?: { diff?: string } }).details?.diff;
 		const logical = [lines[0] || "Updated file"];
 		if (diff) logical.push(...renderDiff(diff).split("\n"));
-		if (options.expanded) return emit(logical);
-		const display = logical.slice(0, 3);
-		if (logical.length > 3) {
-			display.push(theme.fg("dim", `... +${logical.length - 3} lines (${keyHint("app.tools.expand", "to expand")})`));
-		}
-		return emit(display);
+		return emit(logical);
 	}
 
 	// Read collapsed: one-line summary, like CC
@@ -206,14 +207,7 @@ const ccResult = (
 	}
 
 	// Generic collapsed preview
-	const maxLines = options.expanded ? lines.length : 3;
-	const display = lines.slice(0, maxLines);
-	const remaining = lines.length - display.length;
-	const logical = [...display];
-	if (remaining > 0) {
-		logical.push(theme.fg("dim", `... +${remaining} lines (${keyHint("app.tools.expand", "to expand")})`));
-	}
-	return emit(logical.map((l) => paint(l)));
+	return emit(lines.map(paint));
 	},
 });
 
@@ -293,6 +287,51 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	let footerDataBranch: string | null = null;
+
+	// --- Fallback CC rows for third-party/MCP tools ---
+	// Tools registered by other extensions (MCP adapters, pi-task, …) ship no
+	// renderCall/renderResult, so pi's fallback floods the transcript with 10+
+	// wrapped lines. Prototype-patch ToolExecutionComponent (same module
+	// instance pi's TUI uses, like the UserMessageComponent patch below) so any
+	// tool WITHOUT its own renderers gets CC-style collapsed rows; tools that
+	// do define renderers (built-in overrides, webfetch) are untouched.
+	let ccThemeShim: CCTheme | null = null;
+	const patchThirdPartyToolRows = () => {
+		const proto = ToolExecutionComponent.prototype as unknown as {
+			toolName: string;
+			args: unknown;
+			toolDefinition?: unknown;
+			builtInToolDefinition?: unknown;
+			getCallRenderer: () => unknown;
+			getResultRenderer: () => unknown;
+			getRenderShell: () => string;
+			__ccRowsPatched?: boolean;
+		};
+		if (proto.__ccRowsPatched) return;
+		const origCall = proto.getCallRenderer;
+		const origResult = proto.getResultRenderer;
+		const origShell = proto.getRenderShell;
+		const isBuiltin = (self: { builtInToolDefinition?: unknown }) => self.builtInToolDefinition !== undefined;
+		proto.getCallRenderer = function () {
+			const orig = origCall.call(this);
+			if (orig || !enabled || isBuiltin(this)) return orig;
+			// renderCall is a factory: (args, theme, ctx) => component
+			return (args: unknown) => ccCall(ccThemeShim!, this.toolName, JSON.stringify(args ?? {}), false);
+		};
+		proto.getResultRenderer = function () {
+			const orig = origResult.call(this);
+			if (orig || !enabled || isBuiltin(this)) return orig;
+			return (result: unknown, options: { expanded?: boolean }, _theme: unknown, rctx: { isError?: boolean }) =>
+				ccResult(ccThemeShim!, "", result, options, Boolean(rctx?.isError));
+		};
+		// Drop the pending/success background box for third-party tools so they
+		// match the flat CC look of the overridden built-ins.
+		proto.getRenderShell = function () {
+			if (enabled && !isBuiltin(this) && this.toolDefinition !== undefined) return "self";
+			return origShell.call(this);
+		};
+		proto.__ccRowsPatched = true;
+	};
 
 	// --- Status widget: compact CC statusline, right-aligned ABOVE the prompt ---
 	const setStatusWidget = (ctx: ExtensionContext) => {
@@ -463,6 +502,11 @@ export default function (pi: ExtensionAPI) {
 		currentModelName = ctx.model?.name || ctx.model?.id || "";
 		currentProviderName = ctx.model?.provider || "";
 		currentContextWindow = ctx.model?.contextWindow || 0;
+		ccThemeShim = {
+			fg: (color, s) => (ctx.ui.theme as unknown as { fg: (c: string, s: string) => string }).fg(color, s),
+			bold: (s) => (ctx.ui.theme as unknown as { bold: (s: string) => string }).bold(s),
+		};
+		patchThirdPartyToolRows();
 		setHeader(ctx);
 		setEditor(ctx);
 		setStatusWidget(ctx);
