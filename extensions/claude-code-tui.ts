@@ -17,7 +17,7 @@
  *   /claude-verb — 立即换一个随机动词
  */
 
-import { VERSION, keyHint, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
+import { VERSION, keyHint, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { CodexStyleEditor, cursorOpenFromFgAnsi } from "./lib/claude-tui-editor.ts";
@@ -491,6 +491,21 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	registerToolOverrides();
+
+	// Compact CC-style user bars: UserMessageComponent wraps content in a Box
+	// with hardcoded paddingY=1 (a blank row above and below the bar). Patch
+	// rebuild to zero it so the bar sits tight against neighboring messages.
+	const userProto = UserMessageComponent.prototype as unknown as { rebuild: () => void; __ccCompact?: boolean };
+	if (!userProto.__ccCompact) {
+		const origRebuild = userProto.rebuild;
+		userProto.rebuild = function (this: { children?: Array<{ paddingY?: number }> }) {
+			origRebuild.call(this);
+			for (const child of this.children ?? []) {
+				if (child && typeof child.paddingY === "number" && child.paddingY > 0) child.paddingY = 0;
+			}
+		};
+		userProto.__ccCompact = true;
+	}
 
 	// History user messages: CC-style slim bar — dim `❯` at column 0 (outputPad
 	// setting is 0) on a one-row near-black background spanning the content
