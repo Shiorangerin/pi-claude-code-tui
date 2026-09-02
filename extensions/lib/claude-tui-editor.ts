@@ -128,7 +128,15 @@ export class CodexStyleEditor extends CustomEditor {
 		// the prompt). Claude Code pops the menu UP, so lift those rows above
 		// the box.
 		const bottomIdx = findBottomBorderIndex(lines);
-		const autocompleteRows = lines.slice(bottomIdx + 1);
+		// Recolor menu rows to CC's suggestion lavender (pi paints them with
+		// accent orange / muted gray).
+		const autocompleteRows = lines
+			.slice(bottomIdx + 1)
+			.map((l) =>
+				l
+					.replace(/\x1b\[38;2;215;119;87m/g, "\x1b[38;2;177;185;249m")
+					.replace(/\x1b\[38;2;153;153;153m/g, "\x1b[38;2;177;185;249m"),
+			);
 		const core = lines.slice(0, bottomIdx + 1);
 
 		const firstContent = core.findIndex((l) => !isEditorBorderLine(stripAnsi(l)));

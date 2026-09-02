@@ -19,7 +19,7 @@
 
 import { VERSION, keyHint, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CodexStyleEditor, cursorOpenFromFgAnsi } from "./lib/claude-tui-editor.ts";
 
 // --- Claude Code palette (dark theme, from src/utils/theme.ts) ---
@@ -123,69 +123,84 @@ interface CCTheme {
 	bold(s: string): string;
 }
 
-// `⏺ Tool(args)` call row: orange dot, bold tool name, plain args.
-const ccCall = (theme: CCTheme, name: string, args: string): Text =>
-	new Text(`${theme.fg("accent", "⏺")} ${theme.bold(name)}${args ? `(${args})` : ""}`, 0, 0);
+// `⏺ Tool(args)` call row: single line with args ellipsized to fit (CC
+// style), so long commands can never wrap or misalign the dot. The dot
+// turns red when the tool failed.
+const ccCall = (theme: CCTheme, name: string, args: string, isError: boolean) => ({
+	invalidate() {},
+	render(width: number): string[] {
+		const head = `${theme.fg(isError ? "error" : "accent", "⏺")} ${theme.bold(name)}(`;
+		const avail = Math.max(1, width - visibleWidth(head) - 1);
+		const shown = truncateToWidth(args, avail, "…");
+		return [`${head}${shown})`];
+	},
+});
 
-// `⎿  output` result rows: dim gutter + dim text (red on error), collapsed
-// preview with an expand hint, like Claude Code.
+// `⎿  output` result rows: dim gutter, output wrapped and aligned under the
+// gutter, collapsed preview with expand hint, red on error.
 const ccResult = (
 	theme: CCTheme,
 	name: string,
 	result: unknown,
 	options: { expanded?: boolean },
 	isError: boolean,
-): Text => {
+) => ({
+	invalidate() {},
+	render(width: number): string[] {
 	const gutter = theme.fg("dim", "  ⎿  ");
 	const cont = "     ";
+	const paint = (s: string) => (isError ? theme.fg("error", s) : theme.fg("toolOutput", s));
+	const wrapW = Math.max(10, width - cont.length);
+
+	const emit = (logicalLines: string[]): string[] => {
+		const physical: string[] = [];
+		logicalLines.forEach((line, i) => {
+			wrapTextWithAnsi(line, wrapW).forEach((seg, j) => {
+				physical.push(`${i === 0 && j === 0 ? gutter : cont}${seg}`);
+			});
+		});
+		return physical;
+	};
+
 	const output = textOfResult(result).replace(/\n+$/, "");
 	const lines = output ? output.split("\n") : [];
 
-	// Errors: red summary + red detail lines, like CC's `⎿  Error: ...`
+	// Errors: red summary lines, like CC's `⎿  Error: ...`
 	if (isError) {
-		const errLines = lines.slice(0, options.expanded ? lines.length : 6);
-		const body = errLines.map((l, i) => `${i === 0 ? gutter : cont}${theme.fg("error", l)}`).join("\n");
-		return new Text(body || `${gutter}${theme.fg("error", "Error")}`, 0, 0);
+		const rows = lines.slice(0, options.expanded ? lines.length : 4);
+		return emit(rows.length ? rows : ["Error"]);
 	}
 
-	// Edit: summary + colored diff, CC-style
+	// Edit: summary + colored diff
 	if (name === "edit") {
 		const diff = (result as { details?: { diff?: string } }).details?.diff;
-		let body = `${gutter}${theme.fg("toolOutput", lines[0] || "Updated file")}`;
-		if (diff) {
-			body +=
-				"\n" +
-				renderDiff(diff)
-					.split("\n")
-					.map((l) => cont + l)
-					.join("\n");
-		}
-		return new Text(body, 0, 0);
+		const logical = [lines[0] || "Updated file"];
+		if (diff) logical.push(...renderDiff(diff).split("\n"));
+		return emit(options.expanded ? logical : logical.slice(0, 12));
 	}
 
 	// Read collapsed: one-line summary, like CC
 	if (name === "read" && !options.expanded) {
-		return new Text(
+		return [
 			`${gutter}${theme.fg("toolOutput", `Read ${lines.length} lines`)} ${theme.fg("dim", `(${keyHint("app.tools.expand", "to expand")})`)}`,
-			0,
-			0,
-		);
+		];
 	}
 
 	if (lines.length === 0) {
-		return new Text(`${gutter}${theme.fg("toolOutput", "(no content)")}`, 0, 0);
+		return [`${gutter}${theme.fg("toolOutput", "(no content)")}`];
 	}
 
 	// Generic collapsed preview
 	const maxLines = options.expanded ? lines.length : 6;
 	const display = lines.slice(0, maxLines);
 	const remaining = lines.length - display.length;
-	let body = display.map((l, i) => `${i === 0 ? gutter : cont}${theme.fg("toolOutput", l)}`).join("\n");
+	const logical = [...display];
 	if (remaining > 0) {
-		body += `\n${cont}${theme.fg("dim", `... +${remaining} lines (${keyHint("app.tools.expand", "to expand")})`)}`;
+		logical.push(theme.fg("dim", `... +${remaining} lines (${keyHint("app.tools.expand", "to expand")})`));
 	}
-	return new Text(body, 0, 0);
-};
+	return emit(logical);
+	},
+});
 
 export default function (pi: ExtensionAPI) {
 	let enabled = false;
@@ -300,8 +315,9 @@ export default function (pi: ExtensionAPI) {
 		};
 
 		const ccRenderers = (name: string) => ({
-			renderCall(args: unknown, theme: unknown) {
-				return ccCall(theme as CCTheme, name, (callArgs[name] ?? (() => ""))((args ?? {}) as Record<string, unknown>));
+			renderCall(args: unknown, theme: unknown, context: unknown) {
+				const isError = Boolean((context as { isError?: boolean })?.isError);
+				return ccCall(theme as CCTheme, name, (callArgs[name] ?? (() => ""))((args ?? {}) as Record<string, unknown>), isError);
 			},
 			renderResult(result: unknown, options: unknown, theme: unknown, context: unknown) {
 				const opts = options as { expanded?: boolean };
