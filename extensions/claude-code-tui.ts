@@ -129,10 +129,11 @@ interface CCTheme {
 const ccCall = (theme: CCTheme, name: string, args: string, isError: boolean) => ({
 	invalidate() {},
 	render(width: number): string[] {
-		const head = `${theme.fg(isError ? "error" : "accent", "⏺")} ${theme.bold(name)}(`;
+		const white = "\x1b[38;2;255;255;255m";
+		const head = `${theme.fg(isError ? "error" : "accent", "⏺")} ${white}${theme.bold(name)}(`;
 		const avail = Math.max(1, width - visibleWidth(head) - 1);
 		const shown = truncateToWidth(args, avail, "…");
-		return [`${head}${shown})`];
+		return [`${head}${shown})${RESET}`];
 	},
 });
 
@@ -161,6 +162,7 @@ const ccResult = (
 		});
 		return physical;
 	};
+	// paint is applied by callers; emit only wraps and aligns.
 
 	const output = textOfResult(result).replace(/\n+$/, "");
 	const lines = output ? output.split("\n") : [];
@@ -168,7 +170,7 @@ const ccResult = (
 	// Errors: red summary lines, like CC's `⎿  Error: ...`
 	if (isError) {
 		const rows = lines.slice(0, options.expanded ? lines.length : 4);
-		return emit(rows.length ? rows : ["Error"]);
+		return emit((rows.length ? rows : ["Error"]).map((l) => theme.fg("error", l)));
 	}
 
 	// Edit: summary + colored diff
@@ -198,7 +200,7 @@ const ccResult = (
 	if (remaining > 0) {
 		logical.push(theme.fg("dim", `... +${remaining} lines (${keyHint("app.tools.expand", "to expand")})`));
 	}
-	return emit(logical);
+	return emit(logical.map((l) => paint(l)));
 	},
 });
 
@@ -536,9 +538,21 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerMarkdownTransformer((markdown, { messageType, availableWidth }) => {
 		if (messageType === "assistant") {
+			let inFence = false;
 			return markdown
 				.split("\n")
-				.map((l) => (plainLine(l) ? `${WHITE}${l}${RESET}` : l))
+				.map((l) => {
+					if (/^\s*```/.test(l)) {
+						inFence = !inFence;
+						return l;
+					}
+					if (inFence) return l; // keep syntax highlighting
+					// list items: wrap only the text after the marker so the
+					// markdown list structure survives
+					const m = l.match(/^(\s*(?:[-*+]|\d+\.)\s+)(.*)$/);
+					if (m && m[2]!.trim() !== "") return `${m[1]}${WHITE}${m[2]}${RESET}`;
+					return plainLine(l) ? `${WHITE}${l}${RESET}` : l;
+				})
 				.join("\n");
 		}
 		if (messageType !== "user") return markdown;
