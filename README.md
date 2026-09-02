@@ -47,12 +47,14 @@ Two Claude Code behaviors live in your pi settings (not in this package), add th
 ```json
 {
   "tuiMode": "fullscreen",
-  "outputPad": 0
+  "outputPad": 0,
+  "quietStartup": true
 }
 ```
 
 - `tuiMode: "fullscreen"` — pins the prompt bar and status line to the bottom of the terminal with a scrollable transcript (how Claude Code behaves)
 - `outputPad: 0` — sent messages start flush at column 0
+- `quietStartup: true` — hide the startup resource lists (the custom header stays)
 
 ## Notes
 
