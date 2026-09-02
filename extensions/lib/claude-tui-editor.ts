@@ -156,12 +156,16 @@ export class CodexStyleEditor extends CustomEditor {
 		if (firstContent !== -1) {
 			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏`
 			const line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
-			core[firstContent] = truncateToWidth(line, width, "");
-			// Empty editor: the Try suggestion sits on its own line below the
-			// prompt row, like CC.
+			// Empty editor: the Try suggestion is drawn on the SAME row, layered
+			// under the blinking cursor (z-order below, like CC).
 			if (this.placeholder && /^\s*$/.test(this.getText())) {
-				const phLine = truncateToWidth(`  \x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`, width, "");
-				core.splice(firstContent + 1, 0, phLine);
+				core[firstContent] = truncateToWidth(
+					`${line.trimEnd()}\x1b[38;2;153;153;153m${this.placeholder()}\x1b[39m`,
+					width,
+					"",
+				);
+			} else {
+				core[firstContent] = truncateToWidth(line, width, "");
 			}
 		}
 		return [...autocompleteRows, ...core];
