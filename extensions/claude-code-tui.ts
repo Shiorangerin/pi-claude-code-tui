@@ -13,11 +13,13 @@
  *   renderCall/renderResult 的工具（MCP、task 等）同样渲染为折叠的 CC 行
  * - Spinner：✻ 花型动画 + Claude 橙 + 190 个 Claude Code 俏皮动词轮换 + (esc to interrupt · Ns)
  * - 收尾：✻ Worked for 12s（CC 过去式动词）
- * - 状态栏：模型 │ Context 23% (50k/200k) │ $0.042 │ 分支
+ * - 状态栏：模型 │ Context 23% (50k/200k) │ $0.042（/claude-footer 切换；
+ *   开原生底栏时自动隐藏，避免与 pi-mcp-adapter / pi-lens 的 footer 重复）
  *
  * Commands:
  *   /claude-tui  — 开/关整套复刻 UI
  *   /claude-verb — 立即换一个随机动词
+ *   /claude-footer — 开/关原生底栏（开：兼容其它扩展 footer；关：CC 极简风）
  */
 
 import { VERSION, keyHint, ToolExecutionComponent, UserMessageComponent, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition, renderDiff } from "@earendil-works/pi-coding-agent";
@@ -276,8 +278,13 @@ export default function (pi: ExtensionAPI) {
 	// --- Editor: flat rules + gold ❯ + blinking bar cursor ---
 	const setEditor = (ctx: ExtensionContext) => {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+			// NOTE: the factory body runs synchronously inside
+			// setEditorComponent (ctx live), but cursorOpen fires on every
+			// editor render — it must not touch ctx (stale after session
+			// replace/reload → uncaught throw kills pi).
+			// cursorOpenFromFgAnsi currently ignores its arg (fixed gold bar).
 			activeEditor = new CodexStyleEditor(tui, theme, keybindings, () =>
-				cursorOpenFromFgAnsi(ctx.ui.theme.getFgAnsi("accent")),
+				cursorOpenFromFgAnsi(""),
 			);
 			// Shift+Tab toggles Plan/Auto (intercepted in the editor before pi's
 			// built-in thinking-cycle can claim it)
@@ -286,8 +293,6 @@ export default function (pi: ExtensionAPI) {
 		});
 	};
 
-	let footerDataBranch: string | null = null;
-
 	// --- Fallback CC rows for third-party/MCP tools ---
 	// Tools registered by other extensions (MCP adapters, pi-task, …) ship no
 	// renderCall/renderResult, so pi's fallback floods the transcript with 10+
@@ -295,7 +300,6 @@ export default function (pi: ExtensionAPI) {
 	// instance pi's TUI uses, like the UserMessageComponent patch below) so any
 	// tool WITHOUT its own renderers gets CC-style collapsed rows; tools that
 	// do define renderers (built-in overrides, webfetch) are untouched.
-	let ccThemeShim: CCTheme | null = null;
 	const patchThirdPartyToolRows = () => {
 		const proto = ToolExecutionComponent.prototype as unknown as {
 			toolName: string;
@@ -312,17 +316,22 @@ export default function (pi: ExtensionAPI) {
 		const origResult = proto.getResultRenderer;
 		const origShell = proto.getRenderShell;
 		const isBuiltin = (self: { builtInToolDefinition?: unknown }) => self.builtInToolDefinition !== undefined;
+		// NOTE: theme must come from pi core's factory args (always live).
+		// Never capture ctx.ui.theme here: a session_start ctx goes stale
+		// after newSession/fork/switchSession/reload, and touching ctx.ui
+		// inside render() throws where pi can't catch it (kills pi).
 		proto.getCallRenderer = function () {
 			const orig = origCall.call(this);
 			if (orig || !enabled || isBuiltin(this)) return orig;
 			// renderCall is a factory: (args, theme, ctx) => component
-			return (args: unknown) => ccCall(ccThemeShim!, this.toolName, JSON.stringify(args ?? {}), false);
+			return (args: unknown, theme: unknown, rctx?: { isError?: boolean }) =>
+				ccCall(theme as CCTheme, this.toolName, JSON.stringify(args ?? {}), Boolean(rctx?.isError));
 		};
 		proto.getResultRenderer = function () {
 			const orig = origResult.call(this);
 			if (orig || !enabled || isBuiltin(this)) return orig;
-			return (result: unknown, options: { expanded?: boolean }, _theme: unknown, rctx: { isError?: boolean }) =>
-				ccResult(ccThemeShim!, "", result, options, Boolean(rctx?.isError));
+			return (result: unknown, options: { expanded?: boolean }, theme: unknown, rctx: { isError?: boolean }) =>
+				ccResult(theme as CCTheme, "", result, options, Boolean(rctx?.isError));
 		};
 		// Drop the pending/success background box for third-party tools so they
 		// match the flat CC look of the overridden built-ins.
@@ -333,27 +342,42 @@ export default function (pi: ExtensionAPI) {
 		proto.__ccRowsPatched = true;
 	};
 
+	// Last-good usage numbers: widget render must survive a stale ctx
+	// (session replaced/reloaded) — see setStatusWidget below.
+	let cachedUsage = { used: 0, cost: 0 };
+
 	// --- Status widget: compact CC statusline, right-aligned ABOVE the prompt ---
 	const setStatusWidget = (ctx: ExtensionContext) => {
 		ctx.ui.setWidget("cc-status", (tui, theme) => ({
 			invalidate() {},
 			render(width: number): string[] {
 				dockTui = tui;
-				const modelName = currentModelName || ctx.model?.name || ctx.model?.id || "no model";
+				// NOTE: never touch ctx.* in render — after session
+				// replacement/reload the captured ctx is stale and any
+				// access throws uncaught inside render (kills pi). Model
+				// info stays fresh via model_select; usage falls back to
+				// last-good values on stale ctx.
+				const modelName = currentModelName || "no model";
 				const sep = theme.fg("dim", " │ ");
 
-				let used = 0;
-				let cost = 0;
-				for (const entry of ctx.sessionManager.getBranch()) {
-					if (entry.type === "message" && entry.message.role === "assistant") {
-						const usage = (entry.message as { usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: { total?: number } } }).usage;
-						if (usage) {
-							used = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-							cost += usage.cost?.total ?? 0;
+				try {
+					let used = 0;
+					let cost = 0;
+					for (const entry of ctx.sessionManager.getBranch()) {
+						if (entry.type === "message" && entry.message.role === "assistant") {
+							const usage = (entry.message as { usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: { total?: number } } }).usage;
+							if (usage) {
+								used = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+								cost += usage.cost?.total ?? 0;
+							}
 						}
 					}
+					cachedUsage = { used, cost };
+				} catch {
+					// stale ctx: reuse last-good numbers, never throw
 				}
-				const win = currentContextWindow || ctx.model?.contextWindow || 0;
+				const { used, cost } = cachedUsage;
+				const win = currentContextWindow || 0;
 				const pct = win > 0 ? Math.min(100, Math.round((used / win) * 100)) : 0;
 
 				const muted = (s: string) => theme.fg("muted", s);
@@ -366,8 +390,8 @@ export default function (pi: ExtensionAPI) {
 				if (cost > 0) {
 					parts.push(muted(`$${cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4)}`));
 				}
-				const branch = footerDataBranch;
-				if (branch) parts.push(theme.fg("dim", branch));
+				// NOTE: branch intentionally omitted — pi's built-in footer
+				// already shows the git branch.
 
 				const line = parts.join(sep);
 				const pad = " ".repeat(Math.max(0, width - visibleWidth(line)));
@@ -435,26 +459,68 @@ export default function (pi: ExtensionAPI) {
 		registerCC("edit", builtins.edit, ccRenderers("edit"));
 	};
 
-	// --- Footer: hint line (all real pi keybindings) + CC status line ---
-	// --- Footer: mode indicator + keybinding hints (below the editor) ---
-	const setFooter = (ctx: ExtensionContext) => {
-		ctx.ui.setFooter((tui, theme, footerData) => {
-			dockTui = tui;
-			footerDataBranch = footerData.getGitBranch();
-			const unsub = footerData.onBranchChange(() => tui.requestRender());
-			return {
-				dispose: unsub,
-				invalidate() {},
-				render(width: number): string[] {
-					const modeLabel = MODE_LABELS[mode];
-					const hints = theme.fg(
-						"dim",
-						"· ! for bash mode · ctrl+p model · ctrl+o tools",
-					);
-					return [truncateToWidth(`${modeLabel} ${hints}`, width)];
-				},
-			};
-		});
+	// --- Footer line as belowEditor widget (native-on mode; keeps the
+	// footer slot free so other extensions' footers survive) ---
+	// One-line footer text shared by both footer modes (slot vs widget).
+	// CC behavior: while the input holds text, only the mode label shows —
+	// the hints collapse away and return when the input is empty/submitted.
+	const editorHasText = (): boolean => {
+		try {
+			return (activeEditor?.getText() ?? "").trim().length > 0;
+		} catch {
+			return false;
+		}
+	};
+	const footerLineText = (fgDim: (s: string) => string, width: number): string => {
+		const label = MODE_LABELS[mode];
+		if (editorHasText()) return truncateToWidth(label, width, "");
+		const hints = fgDim("· ! for bash mode · ctrl+p model · ctrl+o tools");
+		return truncateToWidth(`${label} ${hints}`, width);
+	};
+
+	const setFooterLine = (ctx: ExtensionContext) => {
+		ctx.ui.setWidget("cc-footer", (_tui, theme) => ({
+			invalidate() {},
+			render(width: number): string[] {
+				return [footerLineText((s) => theme.fg("dim", s), width)];
+			},
+		}), { placement: "belowEditor" });
+	};
+
+	// Footer-slot version of the mode/hints line (native-off mode). The dock
+	// layout reserves minSize:1 for the footer container, so the slot must
+	// render exactly one line — an empty footer would leave a blank row and
+	// push the editor up instead of docking it at the bottom.
+	const setFooterModeLine = (ctx: ExtensionContext) => {
+		ctx.ui.setFooter((_tui, theme) => ({
+			invalidate() {},
+			render(width: number): string[] {
+				return [footerLineText((s) => theme.fg("dim", s), width)];
+			},
+		}));
+	};
+
+	// --- Native footer toggle (/claude-footer) ---
+	// showNativeFooter = true  → pi's built-in footer (keeps other
+	//   extensions' footers / setStatus texts); mode/hints live as the
+	//   cc-footer widget, cc-status hides to avoid duplicating info.
+	// showNativeFooter = false → footer slot renders mode/hints (fills its
+	//   minSize:1, editor stays docked); cc-status widget shows above input.
+	// The footer slot is single-occupancy: occupying it is an explicit user
+	// choice here, flippable at any time with /claude-footer.
+	// Default off = v1.2.0 look, zero visual regression for existing users.
+	let showNativeFooter = false;
+	const applyFooterMode = (ctx: ExtensionContext) => {
+		if (ctx.mode !== "tui") return;
+		if (showNativeFooter) {
+			ctx.ui.setFooter(undefined); // restore built-in footer
+			ctx.ui.setWidget("cc-status", undefined);
+			setFooterLine(ctx); // mode/hints live as belowEditor widget
+		} else {
+			setFooterModeLine(ctx); // fills footer's minSize:1, no gap
+			ctx.ui.setWidget("cc-footer", undefined);
+			setStatusWidget(ctx);
+		}
 	};
 
 	// --- Working indicator + verb rotation ---
@@ -475,11 +541,20 @@ export default function (pi: ExtensionAPI) {
 		if (tickTimer) clearInterval(tickTimer);
 		let ticks = 0;
 		tickTimer = setInterval(() => {
-			ticks++;
-			if (ticks % 7 === 0) verb = randomOf(SPINNER_VERBS);
-			ctx.ui.setWorkingMessage(
-				`${orange(verb)}…  ${gray(`(esc to interrupt · ${formatDuration(Date.now() - runStart)})`)}`,
-			);
+			try {
+				ticks++;
+				if (ticks % 7 === 0) verb = randomOf(SPINNER_VERBS);
+				ctx.ui.setWorkingMessage(
+					`${orange(verb)}…  ${gray(`(esc to interrupt · ${formatDuration(Date.now() - runStart)})`)}`,
+				);
+			} catch {
+				// ctx went stale (session replaced/reloaded mid-run): stop
+				// ticking quietly instead of throwing uncaught (kills pi).
+				if (tickTimer) {
+					clearInterval(tickTimer);
+					tickTimer = null;
+				}
+			}
 		}, 1000);
 	};
 
@@ -502,15 +577,10 @@ export default function (pi: ExtensionAPI) {
 		currentModelName = ctx.model?.name || ctx.model?.id || "";
 		currentProviderName = ctx.model?.provider || "";
 		currentContextWindow = ctx.model?.contextWindow || 0;
-		ccThemeShim = {
-			fg: (color, s) => (ctx.ui.theme as unknown as { fg: (c: string, s: string) => string }).fg(color, s),
-			bold: (s) => (ctx.ui.theme as unknown as { bold: (s: string) => string }).bold(s),
-		};
 		patchThirdPartyToolRows();
 		setHeader(ctx);
 		setEditor(ctx);
-		setStatusWidget(ctx);
-		setFooter(ctx);
+		applyFooterMode(ctx);
 		applyWorking(ctx);
 	};
 
@@ -523,8 +593,12 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.mode !== "tui") return;
 		ctx.ui.setHeader(undefined);
 		ctx.ui.setEditorComponent(undefined);
+		// Replica fully off: relinquish the footer slot (restores pi's
+		// built-in footer). Single-occupancy caveat still applies, but an
+		// explicit off means the user wants stock pi back.
 		ctx.ui.setFooter(undefined);
 		ctx.ui.setWidget("cc-status", undefined);
+		ctx.ui.setWidget("cc-footer", undefined);
 		if (toolsBeforePlan) {
 			pi.setActiveTools(toolsBeforePlan);
 			toolsBeforePlan = undefined;
@@ -622,6 +696,20 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("claude-footer", {
+		description: "Toggle pi's native footer (on: keep MCP/other footers, hide CC status widget; off: CC-clean look)",
+		handler: async (args, ctx) => {
+			const a = args.trim().toLowerCase();
+			if (a === "on" || a === "off") showNativeFooter = a === "on";
+			else showNativeFooter = !showNativeFooter;
+			if (enabled) applyFooterMode(ctx);
+			ctx.ui.notify(
+				`Native footer ${showNativeFooter ? "on — CC status widget hidden" : "off — CC status widget shown"}`,
+				"info",
+			);
+		},
+	});
+
 	registerToolOverrides();
 
 	// Compact CC-style user bars: UserMessageComponent wraps content in a Box
@@ -641,7 +729,9 @@ export default function (pi: ExtensionAPI) {
 
 	// History user messages: CC-style slim bar — dim `❯` at column 0 (outputPad
 	// setting is 0) on a one-row near-black background spanning the content
-	// width. Display-only: session and model context keep the original text.
+	// width. Continuation lines indent 2 cols so no glyph ever shares ❯'s
+	// column, like CC. Display-only: session and model context keep the
+	// original text.
 	// CC renders conversation text explicitly white; pi leaves it at the
 	// terminal default (which can be any color, e.g. Gruvbox cream). Force
 	// white on plain lines; markdown-styled lines (headings, lists, code,
@@ -678,7 +768,7 @@ export default function (pi: ExtensionAPI) {
 			.split("\n")
 			.map((line, i) => {
 				const text = `${WHITE}${line}${RESET}`;
-				const content = i === 0 ? `${gray("❯")} ${text}` : text;
+				const content = i === 0 ? `${gray("❯")} ${text}` : `  ${text}`;
 				const pad = "\u00A0".repeat(Math.max(0, width - visibleWidth(content) - 1));
 				return `${bg}${content}${pad}${bgOff}`;
 			})

@@ -12,7 +12,8 @@ A [pi](https://pi.dev) package that recreates the look and feel of Anthropic's C
 - **CC-style tool rows** — `⏺ Tool(args)` with a dim `⎿` gutter for output, colored diffs, red errors (built-in tool execution is untouched — rendering only). Collapsed output is capped at **3 physical rows** (a single minified JSON line can wrap into dozens of terminal rows, so collapse counts wrapped rows, not logical lines) with an expand hint.
 - **Third-party / MCP tool fallback** — tools registered by other extensions (MCP adapters, `task`, …) ship no renderers and would flood the transcript with pi's 10-line fallback; the extension prototype-patches `ToolExecutionComponent` so any tool without its own `renderCall`/`renderResult` gets the same CC-style collapsed rows.
 - **Spinner verbs** — the full set of 190 Claude Code playful verbs (`Pondering…`, `Vibing…`, `Flibbertigibbeting…`) on a blossom spinner, with a `✻ Worked for 12s` completion line
-- **Status line** — `model │ Context 23% (50k/200k) │ $0.042 │ branch`
+- **Status line** — `model │ Context 23% (50k/200k) │ $0.042` above the prompt. Run `/claude-footer on` to use pi's native footer instead (keeps other extensions' footers, e.g. MCP adapters — the CC status widget hides itself to avoid duplication)
+- **Footer** — `⏵⏵ auto mode on …` keybinding hints; auto-compacts to just the mode label while the input holds text
 - **History** — sent messages render as a slim full-width bar with a dim `❯` prefix
 - **claude-code theme** — the Claude Code dark palette applied to the whole TUI
 
@@ -40,6 +41,7 @@ Please install the pi package "pi-claude-code-tui" for me:
 | Command | Description |
 | --- | --- |
 | `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
+| `/claude-footer` | Toggle pi's native footer (`on`: keep MCP/other footers, hide CC status widget; `off`: CC-clean look) |
 | `/claude-verb` | Reroll the spinner verb |
 | `Shift+Tab` or `/mode` | Toggle **Plan Mode** / **Auto Mode** |
 

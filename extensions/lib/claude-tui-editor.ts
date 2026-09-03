@@ -162,11 +162,23 @@ export class CodexStyleEditor extends CustomEditor {
 			);
 		const core = lines.slice(0, bottomIdx + 1);
 
-		const firstContent = core.findIndex((l) => !isEditorBorderLine(stripAnsi(l)));
-		if (firstContent !== -1) {
-			// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏`
-			const line = `${prompt} ${lines[firstContent]!.replace(/^ /, "")}`;
-			core[firstContent] = truncateToWidth(line, width, "");
+		// CC fidelity: `❯` always sits at column 0; continuation rows never
+		// share its column — they align under the input text (col 2). pi's
+		// editor pads every row with 1 col, but soft-wrapped rows lose the
+		// padding and start at col 0, so normalize every content row here.
+		// (Autocomplete rows were already lifted above `core`, borders pass
+		// through untouched.)
+		const strip1 = (l: string) => (l.startsWith(" ") ? l.slice(1) : l);
+		let seenFirst = false;
+		for (let i = 0; i < core.length; i++) {
+			if (isEditorBorderLine(stripAnsi(core[i]!))) continue;
+			if (!seenFirst) {
+				seenFirst = true;
+				// strip the editor's own 1-col padding so the prompt sits snug: `❯ ▏`
+				core[i] = truncateToWidth(`${prompt} ${strip1(core[i]!)}`, width, "");
+			} else {
+				core[i] = truncateToWidth(`  ${strip1(core[i]!)}`, width, "");
+			}
 		}
 		return [...autocompleteRows, ...core];
 	}
