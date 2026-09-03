@@ -132,14 +132,29 @@ interface CCTheme {
 	bold(s: string): string;
 }
 
+// ⏺ dot state (CC): orange while running, green on success, red on error.
+// pi rebuilds the call row when the result lands, so `isPartial === false`
+// flips the dot without any extra subscription.
+type CCDotStatus = "running" | "success" | "error";
+const DOT_COLOR: Record<CCDotStatus, string> = {
+	running: "accent",
+	success: "success",
+	error: "error",
+};
+const dotStatus = (rctx?: { isError?: boolean; isPartial?: boolean }): CCDotStatus => {
+	if (rctx?.isError) return "error";
+	if (rctx?.isPartial === false) return "success";
+	return "running";
+};
+
 // `⏺ Tool(args)` call row: single line with args ellipsized to fit (CC
 // style), so long commands can never wrap or misalign the dot. The dot
 // turns red when the tool failed.
-const ccCall = (theme: CCTheme, name: string, args: string, isError: boolean) => ({
+const ccCall = (theme: CCTheme, name: string, args: string, status: CCDotStatus) => ({
 	invalidate() {},
 	render(width: number): string[] {
 		const white = "\x1b[38;2;255;255;255m";
-		const head = `${theme.fg(isError ? "error" : "accent", "⏺")} ${white}${theme.bold(name)}(`;
+		const head = `${theme.fg(DOT_COLOR[status], "⏺")} ${white}${theme.bold(name)}(`;
 		const avail = Math.max(1, width - visibleWidth(head) - 1);
 		const shown = truncateToWidth(args, avail, "…");
 		return [`${head}${shown})${RESET}`];
@@ -324,8 +339,8 @@ export default function (pi: ExtensionAPI) {
 			const orig = origCall.call(this);
 			if (orig || !enabled || isBuiltin(this)) return orig;
 			// renderCall is a factory: (args, theme, ctx) => component
-			return (args: unknown, theme: unknown, rctx?: { isError?: boolean }) =>
-				ccCall(theme as CCTheme, this.toolName, JSON.stringify(args ?? {}), Boolean(rctx?.isError));
+			return (args: unknown, theme: unknown, rctx?: { isError?: boolean; isPartial?: boolean }) =>
+				ccCall(theme as CCTheme, this.toolName, JSON.stringify(args ?? {}), dotStatus(rctx));
 		};
 		proto.getResultRenderer = function () {
 			const orig = origResult.call(this);
@@ -440,8 +455,7 @@ export default function (pi: ExtensionAPI) {
 
 		const ccRenderers = (name: string) => ({
 			renderCall(args: unknown, theme: unknown, context: unknown) {
-				const isError = Boolean((context as { isError?: boolean })?.isError);
-				return ccCall(theme as CCTheme, name, (callArgs[name] ?? (() => ""))((args ?? {}) as Record<string, unknown>), isError);
+				return ccCall(theme as CCTheme, name, (callArgs[name] ?? (() => ""))((args ?? {}) as Record<string, unknown>), dotStatus(context as { isError?: boolean; isPartial?: boolean }));
 			},
 			renderResult(result: unknown, options: unknown, theme: unknown, context: unknown) {
 				const opts = options as { expanded?: boolean };

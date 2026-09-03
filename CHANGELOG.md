@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- **`⏺` dot states (CC fidelity)** — orange while running, green on success
+  (`success` theme color), red on error. pi rebuilds the call row when the
+  result lands, so the dot flips via `isPartial` with no extra subscription.
+
 ## 1.2.1
 
 - **Native footer toggle** — new `/claude-footer` command (`on` / `off`, no-arg flips).
