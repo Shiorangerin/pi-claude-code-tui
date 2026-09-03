@@ -6,6 +6,9 @@
   "keywords": ["pi-package", "pi", "tui", "theme", "claude", "claude-code"],
   "license": "MIT",
   "author": "Shiorangerin",
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/Shiorangerin/pi-claude-code-tui#readme",
   "repository": {
     "type": "git",
