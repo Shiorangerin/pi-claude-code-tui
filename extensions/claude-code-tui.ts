@@ -27,6 +27,9 @@ import { VERSION, keyHint, ToolExecutionComponent, UserMessageComponent, createB
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CodexStyleEditor, cursorOpenFromFgAnsi } from "./lib/claude-tui-editor.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 // --- Claude Code palette (dark theme, from src/utils/theme.ts) ---
 const CLAUDE = "\x1b[38;2;215;119;87m";
@@ -237,7 +240,28 @@ export default function (pi: ExtensionAPI) {
 	// another TUI extension (e.g. minuque/pi-cc-extensions) can own tool
 	// rendering while the rest of the replica (header / editor / spinner /
 	// status) stays on. Default on = previous behavior.
-	let toolRowsEnabled = process.env.CC_TUI_TOOL_ROWS !== "0";
+	// Persisted in ~/.pi/agent/claude-tui.json so `/claude-tools off` survives
+	// /reload and restarts; CC_TUI_TOOL_ROWS=0 still forces off (env wins).
+	const toolRowsPrefPath = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "claude-tui.json");
+	const loadToolRowsPref = (): boolean => {
+		try {
+			if (process.env.CC_TUI_TOOL_ROWS === "0") return false;
+			if (!existsSync(toolRowsPrefPath)) return true;
+			const pref = JSON.parse(readFileSync(toolRowsPrefPath, "utf8")) as { toolRows?: unknown };
+			return pref.toolRows !== false;
+		} catch {
+			return true;
+		}
+	};
+	const saveToolRowsPref = (on: boolean): void => {
+		try {
+			mkdirSync(dirname(toolRowsPrefPath), { recursive: true });
+			writeFileSync(toolRowsPrefPath, JSON.stringify({ toolRows: on }, null, 2));
+		} catch {
+			// Never break the TUI over a preference write.
+		}
+	};
+	let toolRowsEnabled = loadToolRowsPref();
 	let verb = randomOf(SPINNER_VERBS);
 	let runStart = 0;
 	let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -731,6 +755,7 @@ export default function (pi: ExtensionAPI) {
 			const a = args.trim().toLowerCase();
 			const next = a === "on" ? true : a === "off" ? false : !toolRowsEnabled;
 			toolRowsEnabled = next;
+			saveToolRowsPref(next);
 			if (next) {
 				registerToolOverrides();
 				ctx.ui.notify("CC tool rows on", "info");

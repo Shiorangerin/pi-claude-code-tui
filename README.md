@@ -62,9 +62,12 @@ another TUI suite such as [pi-cc-extensions](https://github.com/minuque/pi-cc-ex
 (which owns expandable tool cards, rich diffs and mouse interaction):
 
 - **Keep this package's shell, give away the cards** (recommended combo):
-  start pi with `CC_TUI_TOOL_ROWS=0 pi`, or run `/claude-tools off` inside
-  pi followed by `/reload` so the other extension takes over tool rendering.
-  Header, editor, spinner verbs, status line and footer all stay on.
+  run `/claude-tools off` inside pi (the choice is saved to
+  `~/.pi/agent/claude-tui.json` and survives `/reload` and restarts), or
+  start pi once with `CC_TUI_TOOL_ROWS=0 pi`. Header, editor, spinner verbs,
+  status line and footer all stay on. Also put this package **after**
+  pi-cc-extensions in the `packages` list in `settings.json` so its header
+  and editor win the shared slots.
 - **Keep this package's cards**: `/claude-tools on` (default). On the other
   extension's side, turn its overlapping parts down (for pi-cc-extensions:
   `showStartupHeader: false` and `enableWorkingMessage: false` in

@@ -1,6 +1,6 @@
 {
   "name": "@shiorangerin/pi-claude-code-tui",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Claude Code-style TUI for pi: Clawd header, slim prompt bar, CC tool rows, spinner verbs, status line",
   "type": "module",
   "keywords": ["pi-package", "pi", "tui", "theme", "claude", "claude-code"],

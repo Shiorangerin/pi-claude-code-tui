@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+- **Tool-rows choice persists + load-order note** — `/claude-tools off`
+  is now saved to `~/.pi/agent/claude-tui.json` and survives `/reload`
+  and restarts (previously it reset to on). README documents the
+  recommended combo with pi-cc-extensions: this package listed **after**
+  it in `packages` so the header/editor win the shared slots.
+
 ## 1.3.0
 
 - **Tool rows on their own switch — compatible with pi-cc-extensions** —
