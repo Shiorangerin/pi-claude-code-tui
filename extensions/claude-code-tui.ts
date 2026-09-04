@@ -18,7 +18,7 @@
  *
  * Commands:
  *   /claude-tui  — 开/关整套复刻 UI（头 / 输入框 / 转圈 / 状态栏，不含工具行）
- *   /claude-tools — 单独开/关 CC 工具行（与其它 TUI 扩展共存用）
+ *   /claude-tools — CC 工具行：on / off / auto（auto 碰到别家自动让路）
  *   /claude-verb — 立即换一个随机动词
  *   /claude-footer — 开/关原生底栏（开：兼容其它扩展 footer；关：CC 极简风）
  */
@@ -240,28 +240,50 @@ export default function (pi: ExtensionAPI) {
 	// another TUI extension (e.g. minuque/pi-cc-extensions) can own tool
 	// rendering while the rest of the replica (header / editor / spinner /
 	// status) stays on. Default on = previous behavior.
-	// Persisted in ~/.pi/agent/claude-tui.json so `/claude-tools off` survives
-	// /reload and restarts; CC_TUI_TOOL_ROWS=0 still forces off (env wins).
+	// Preference is tri-state and lives in ~/.pi/agent/claude-tui.json:
+	// true/false = explicit user choice (survives /reload and restarts),
+	// undefined = auto (no file yet): yield when another extension owns any
+	// built-in tool row, checked via pi.getAllTools() source metadata at
+	// session_start when every extension has loaded. CC_TUI_TOOL_ROWS=0
+	// still forces off (env wins over everything).
 	const toolRowsPrefPath = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "claude-tui.json");
-	const loadToolRowsPref = (): boolean => {
+	const loadToolRowsPref = (): boolean | undefined => {
 		try {
-			if (process.env.CC_TUI_TOOL_ROWS === "0") return false;
-			if (!existsSync(toolRowsPrefPath)) return true;
+			if (!existsSync(toolRowsPrefPath)) return undefined;
 			const pref = JSON.parse(readFileSync(toolRowsPrefPath, "utf8")) as { toolRows?: unknown };
-			return pref.toolRows !== false;
+			if (pref.toolRows === false) return false;
+			if (pref.toolRows === true) return true;
+			return undefined;
 		} catch {
-			return true;
+			return undefined;
 		}
 	};
-	const saveToolRowsPref = (on: boolean): void => {
+	const saveToolRowsPref = (pref: boolean | undefined): void => {
 		try {
 			mkdirSync(dirname(toolRowsPrefPath), { recursive: true });
-			writeFileSync(toolRowsPrefPath, JSON.stringify({ toolRows: on }, null, 2));
+			writeFileSync(toolRowsPrefPath, JSON.stringify(pref === undefined ? {} : { toolRows: pref }, null, 2));
 		} catch {
 			// Never break the TUI over a preference write.
 		}
 	};
-	let toolRowsEnabled = loadToolRowsPref();
+	let toolRowsPref = loadToolRowsPref();
+	let toolRowsEnabled = toolRowsPref !== false && process.env.CC_TUI_TOOL_ROWS !== "0";
+	let autoYieldNotified = false;
+	// Who owns the built-in tool rows right now? Returns the owner's source
+	// id (e.g. another extension's package), or undefined when pi's own
+	// built-ins own them. Same signal minuque/pi-cc-extensions uses to yield.
+	const externalToolOwner = (): string | undefined => {
+		try {
+			const tools = pi.getAllTools();
+			for (const name of ["read", "bash", "grep", "find", "ls", "write", "edit"]) {
+				const source = tools.find((tool) => tool?.name === name)?.sourceInfo?.source;
+				if (typeof source === "string" && source !== "builtin" && !source.includes("claude-code-tui")) return source;
+			}
+		} catch {
+			// getAllTools is unavailable before the extension runtime is bound.
+		}
+		return undefined;
+	};
 	let verb = randomOf(SPINNER_VERBS);
 	let runStart = 0;
 	let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -638,6 +660,26 @@ export default function (pi: ExtensionAPI) {
 		currentModelName = ctx.model?.name || ctx.model?.id || "";
 		currentProviderName = ctx.model?.provider || "";
 		currentContextWindow = ctx.model?.contextWindow || 0;
+		// Tool rows: explicit choice wins; otherwise auto-detect. Detection
+		// runs here (not at load) so every extension has registered already.
+		// TUI-only: print/RPC modes keep stock rendering.
+		if (process.env.CC_TUI_TOOL_ROWS === "0" || toolRowsPref === false) {
+			toolRowsEnabled = false;
+		} else if (toolRowsPref === true) {
+			toolRowsEnabled = true;
+			registerToolOverrides();
+		} else {
+			const owner = externalToolOwner();
+			toolRowsEnabled = !owner;
+			if (owner) {
+				if (!autoYieldNotified) {
+					autoYieldNotified = true;
+					ctx.ui.notify(`CC tool rows auto-off — tools owned by ${owner} (run /claude-tools on to override)`, "info");
+				}
+			} else {
+				registerToolOverrides();
+			}
+		}
 		patchThirdPartyToolRows();
 		setHeader(ctx);
 		setEditor(ctx);
@@ -750,10 +792,26 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("claude-tools", {
-		description: "Toggle the CC tool rows independently (off: coexist with other TUI extensions' tool rendering)",
+		description: "CC tool rows: on | off | auto (auto yields to other TUI extensions)",
 		handler: async (args, ctx) => {
 			const a = args.trim().toLowerCase();
+			if (a === "auto" || (a !== "on" && a !== "off" && toolRowsPref === undefined)) {
+				// Back to / explicit auto-detect.
+				toolRowsPref = undefined;
+				saveToolRowsPref(undefined);
+				const owner = externalToolOwner();
+				toolRowsEnabled = !owner;
+				if (owner) {
+					registerNativeTools();
+					ctx.ui.notify(`CC tool rows auto-off — tools owned by ${owner} (run /claude-tools on to override)`, "info");
+				} else {
+					registerToolOverrides();
+					ctx.ui.notify("CC tool rows auto-on — no other owner detected", "info");
+				}
+				return;
+			}
 			const next = a === "on" ? true : a === "off" ? false : !toolRowsEnabled;
+			toolRowsPref = next;
 			toolRowsEnabled = next;
 			saveToolRowsPref(next);
 			if (next) {
@@ -788,9 +846,9 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Off at load (CC_TUI_TOOL_ROWS=0): don't touch tool registration at all,
-	// so another TUI extension owns tool rendering from the start.
-	if (toolRowsEnabled) registerToolOverrides();
+	// Tool registration happens in enable() (session_start), never at load:
+	// detection needs every extension registered, and non-TUI modes keep
+	// stock rendering. Nothing to do here.
 
 	// Compact CC-style user bars: UserMessageComponent wraps content in a Box
 	// with hardcoded paddingY=1 (a blank row above and below the bar). Patch

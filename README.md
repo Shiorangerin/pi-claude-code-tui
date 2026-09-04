@@ -57,21 +57,20 @@ The current mode is always shown at the left of the hint line below the prompt b
 
 Tool rendering is single-occupancy in pi: only one extension can style the
 `read` / `bash` / `grep` / `find` / `ls` / `write` / `edit` rows. This package
-now keeps its tool rows on an independent switch so it can coexist with
-another TUI suite such as [pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)
-(which owns expandable tool cards, rich diffs and mouse interaction):
+stays out of the way on its own:
 
-- **Keep this package's shell, give away the cards** (recommended combo):
-  run `/claude-tools off` inside pi (the choice is saved to
-  `~/.pi/agent/claude-tui.json` and survives `/reload` and restarts), or
-  start pi once with `CC_TUI_TOOL_ROWS=0 pi`. Header, editor, spinner verbs,
-  status line and footer all stay on. Also put this package **after**
-  pi-cc-extensions in the `packages` list in `settings.json` so its header
-  and editor win the shared slots.
-- **Keep this package's cards**: `/claude-tools on` (default). On the other
-  extension's side, turn its overlapping parts down (for pi-cc-extensions:
-  `showStartupHeader: false` and `enableWorkingMessage: false` in
-  `~/.pi/agent/claude-code-style.json`).
+- **Auto-detect (default)** — on every session start it checks
+  `pi.getAllTools()` source metadata. If another extension (e.g.
+  [pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)) owns the
+  built-in tool rows, the CC rows stay off and a one-time notice explains
+  why. Nothing to configure.
+- **Manual override** — `/claude-tools on` takes the rows back,
+  `/claude-tools off` gives them away, `/claude-tools auto` returns to
+  auto-detect. The choice is saved to `~/.pi/agent/claude-tui.json` and
+  survives `/reload` and restarts; `CC_TUI_TOOL_ROWS=0` forces off.
+- **Header/editor slots** are also single-occupancy (last writer wins). If
+  you run another TUI suite alongside, put this package **after** it in the
+  `packages` list in `settings.json` so its header and editor win.
 
 ## Recommended settings
 

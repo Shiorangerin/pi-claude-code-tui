@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+- **Tool rows auto-yield to other TUI suites** — no more manual setup for
+  the common conflict. On every session start the extension checks
+  `pi.getAllTools()` source metadata; if another extension (e.g.
+  minuque/pi-cc-extensions) owns the built-in tool rows, the CC rows stay
+  off with a one-time notice. `/claude-tools` gains an `auto` mode
+  (back to detection), explicit `on`/`off` still wins and persists, and
+  tool registration moved to session start so print/RPC modes always keep
+  stock rendering.
+
 ## 1.3.1
 
 - **Tool-rows choice persists + load-order note** — `/claude-tools off`
