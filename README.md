@@ -1,80 +1,69 @@
 # pi-claude-code-tui
 
-A [pi](https://pi.dev) package that recreates the look and feel of Anthropic's Claude Code TUI.
+一个复刻 Anthropic Claude Code TUI 外观与手感的 [pi](https://pi.dev) 包。
 
 <img width="691" height="448" alt="image" src="https://github.com/user-attachments/assets/3a030401-ed14-4705-b865-fdaf35fcba4f" />
 
 
-## What you get
+## 你能得到什么
 
-- **Startup header** — the pixel Clawd mascot next to a bold `Claude Code` title, your active model name and cwd (third-party model names are shown as-is)
-- **Slim prompt bar** — flat rules, gold `❯` prompt, gold bar cursor, and a dim rotating `Try "..."` suggestion when the editor is empty
-- **CC-style tool rows** — `⏺ Tool(args)` with a dim `⎿` gutter for output, colored diffs, red errors (built-in tool execution is untouched — rendering only). Collapsed output is capped at **3 physical rows** (a single minified JSON line can wrap into dozens of terminal rows, so collapse counts wrapped rows, not logical lines) with an expand hint.
-- **Third-party / MCP tool fallback** — tools registered by other extensions (MCP adapters, `task`, …) ship no renderers and would flood the transcript with pi's 10-line fallback; the extension prototype-patches `ToolExecutionComponent` so any tool without its own `renderCall`/`renderResult` gets the same CC-style collapsed rows.
-- **Spinner verbs** — the full set of 190 Claude Code playful verbs (`Pondering…`, `Vibing…`, `Flibbertigibbeting…`) on a blossom spinner, with a `✻ Worked for 12s` completion line
-- **Status line** — `model │ Context 23% (50k/200k) │ $0.042` above the prompt. Run `/claude-footer on` to use pi's native footer instead (keeps other extensions' footers, e.g. MCP adapters — the CC status widget hides itself to avoid duplication)
-- **Footer** — `⏵⏵ auto mode on …` keybinding hints; auto-compacts to just the mode label while the input holds text
-- **History** — sent messages render as a slim full-width bar with a dim `❯` prefix
-- **claude-code theme** — the Claude Code dark palette applied to the whole TUI
+- **启动头** — 像素风 Clawd 吉祥物 + 粗体 `Claude Code` 标题 + 当前模型名与 cwd（第三方模型名原样显示）
+- **精简提示栏** — 平面分隔线、金色 `❯` 提示符、金色条状光标；编辑器为空时显示暗色旋转的 `Try "..."` 建议
+- **CC 风格工具行** — `⏺ Tool(args)` 格式 + 暗色 `⎿` 输出槽、彩色 diff、红色错误提示（内置工具的执行逻辑完全不动，仅渲染层改造）。折叠输出上限为 **3 个物理行**（单行压缩 JSON 可能换行成几十个终端行，所以折叠按换行后的行数计算，而非逻辑行数），并带展开提示。
+- **第三方 / MCP 工具回退** — 其他扩展注册的工具（MCP 适配器、`task` 等）没有自带渲染器，会用 pi 默认的 10 行 fallback 淹没对话记录；本扩展通过 prototype-patch `ToolExecutionComponent`，让任何没有 `renderCall`/`renderResult` 的工具都能获得同样的 CC 风格折叠行。
+- **旋转状态动词** — 全套 190 个 Claude Code 俏皮动词（`Pondering…`、`Vibing…`、`Flibbertigibbeting…`），配花瓣旋转动画，完成时显示 `✻ Worked for 12s` 收尾行
+- **状态行** — 提示栏上方显示 `model │ Context 23% (50k/200k) │ $0.042`。运行 `/claude-footer on` 可换回 pi 原生 footer（保留其他扩展的 footer，如 MCP 适配器——CC 状态组件会自动隐藏，避免重复）
+- **底部提示行** — `⏵⏵ auto mode on …` 按键提示；输入框有内容时自动压缩为仅模式标签
+- **历史消息** — 已发送的消息渲染为细长全宽条，带暗色 `❯` 前缀
+- **claude-code 主题** — 将 Claude Code 暗色调色板应用到整个 TUI
 
-Everything is display-only: nothing changes what gets sent to the model.
+以上全部只是显示层：**不会改变任何发给模型的内容**。
 
-## Install
+## 安装
 
 ```bash
 pi install git:github.com/Shiorangerin/pi-claude-code-tui
 ```
 
-Then open `/settings` in pi and pick the **claude-code** theme. Restart pi.
+然后在 pi 中打开 `/settings`，选择 **claude-code** 主题，重启 pi。
 
-### Or just paste this to your AI assistant
+### 或者直接把这段复制给你的 AI 助手
 
 ```text
-Please install the pi package "pi-claude-code-tui" for me:
-1. Run: pi install git:github.com/Shiorangerin/pi-claude-code-tui
-2. Open pi, run /settings, and select the "claude-code" theme
-3. Restart pi
+请帮我安装 pi 包 "pi-claude-code-tui"：
+1. 运行：pi install git:github.com/Shiorangerin/pi-claude-code-tui
+2. 打开 pi，运行 /settings，选择 "claude-code" 主题
+3. 重启 pi
 ```
 
-## Commands
+## 命令
 
-| Command | Description |
+| 命令 | 说明 |
 | --- | --- |
-| `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line; tool rows are separate, see below) |
-| `/claude-tools` | Toggle the CC tool rows independently (`on` / `off`, no-arg flips) |
-| `/claude-footer` | Toggle pi's native footer (`on`: keep MCP/other footers, hide CC status widget; `off`: CC-clean look) |
-| `/claude-verb` | Reroll the spinner verb |
-| `Shift+Tab` or `/mode` | Toggle **Plan Mode** / **Auto Mode** |
+| `/claude-tui` | 整体开关复刻效果（头图 / 编辑器 / 旋转动画 / 状态行；工具行独立控制，见下） |
+| `/claude-tools` | 独立开关 CC 工具行（`on` / `off`，不带参数则翻转） |
+| `/claude-footer` | 切换 pi 原生 footer（`on`：保留 MCP 等扩展的 footer、隐藏 CC 状态组件；`off`：纯 CC 干净外观） |
+| `/claude-verb` | 重新掷一个旋转动画动词 |
+| `Shift+Tab` 或 `/mode` | 切换 **Plan Mode** / **Auto Mode** |
 
-### Modes
+### 模式
 
-- **Auto Mode** — normal full tool access (default)
-- **Plan Mode** — read-only research: `edit`/`write` tools are disabled and the model is instructed to explore and present a plan instead of making changes
+- **Auto Mode** — 正常的完整工具权限（默认）
+- **Plan Mode** — 只读研究：`edit`/`write` 工具被禁用，模型被指示先探索并给出方案，而不是直接改动
 
-The current mode is always shown at the left of the hint line below the prompt bar.
+当前模式始终显示在提示栏下方提示行的左侧。
 
-## Compatibility with other TUI extensions
+## 与其他 TUI 扩展的兼容性
 
-Tool rendering is single-occupancy in pi: only one extension can style the
-`read` / `bash` / `grep` / `find` / `ls` / `write` / `edit` rows. This package
-stays out of the way on its own:
+pi 中工具渲染是单占位机制：`read` / `bash` / `grep` / `find` / `ls` / `write` / `edit` 这几行的样式只能由一个扩展接管。本包默认自动让位：
 
-- **Auto-detect (default)** — on every session start it checks
-  `pi.getAllTools()` source metadata. If another extension (e.g.
-  [pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)) owns the
-  built-in tool rows, the CC rows stay off and a one-time notice explains
-  why. Nothing to configure.
-- **Manual override** — `/claude-tools on` takes the rows back,
-  `/claude-tools off` gives them away, `/claude-tools auto` returns to
-  auto-detect. The choice is saved to `~/.pi/agent/claude-tui.json` and
-  survives `/reload` and restarts; `CC_TUI_TOOL_ROWS=0` forces off.
-- **Header/editor slots** are also single-occupancy (last writer wins). If
-  you run another TUI suite alongside, put this package **after** it in the
-  `packages` list in `settings.json` so its header and editor win.
+- **自动检测（默认）** — 每次会话启动时检查 `pi.getAllTools()` 的源元数据。如果其他扩展（如 [pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)）已占用内置工具行，CC 工具行保持关闭并一次性提示原因。无需任何配置。
+- **手动覆盖** — `/claude-tools on` 收回工具行，`/claude-tools off` 让出，`/claude-tools auto` 恢复自动检测。选择会保存到 `~/.pi/agent/claude-tui.json`，在 `/reload` 和重启后依然生效；`CC_TUI_TOOL_ROWS=0` 可强制关闭。
+- **头图/编辑器槽位**同样是单占位（后写者胜）。如果与其他 TUI 套件同时使用，请在 `settings.json` 的 `packages` 列表里把本包放在**后面**，这样头图和编辑器由本包接管。
 
-## Recommended settings
+## 推荐设置
 
-Two Claude Code behaviors live in your pi settings (not in this package), add them to `~/.pi/agent/settings.json`:
+两个 Claude Code 行为存在于你的 pi 设置中（不在本包内），把它们加到 `~/.pi/agent/settings.json`：
 
 ```json
 {
@@ -84,39 +73,27 @@ Two Claude Code behaviors live in your pi settings (not in this package), add th
 }
 ```
 
-- `tuiMode: "fullscreen"` — pins the prompt bar and status line to the bottom of the terminal with a scrollable transcript (how Claude Code behaves)
-- Note: `Shift+Tab` toggles modes instead of pi's built-in thinking-level cycling
-- `outputPad: 0` — sent messages start flush at column 0
-- `quietStartup: true` — hide the startup resource lists (the custom header stays)
+- `tuiMode: "fullscreen"` — 将提示栏和状态行固定到终端底部，对话记录可滚动（Claude Code 的行为方式）
+- 注意：`Shift+Tab` 被改为切换模式，不再是 pi 内置的思考层级循环
+- `outputPad: 0` — 已发送的消息从第 0 列开始顶格显示
+- `quietStartup: true` — 隐藏启动时的资源列表（自定义头图保留）
 
-## Notes
+## 说明
 
-- The theme assumes a dark terminal.
-- Tool row styling overrides built-in renderers for `read`, `bash`, `grep`, `find`, `ls`, `write`, `edit`; execution always delegates to pi's built-in implementations.
-- The editor component is adapted from the MIT-licensed [pi-claude-code-tui](https://github.com/Phoobobo/pi-claude-code-tui) by Phoobobo.
-- Claude Code is a product of Anthropic. This package only mimics its terminal aesthetics and ships none of its code.
+- 主题假定使用深色终端。
+- 工具行样式覆盖了 `read`、`bash`、`grep`、`find`、`ls`、`write`、`edit` 的内置渲染器；执行始终委托给 pi 的内置实现。
+- 编辑器组件改编自 Phoobobo 的 MIT 许可项目 [pi-claude-code-tui](https://github.com/Phoobobo/pi-claude-code-tui)。
+- Claude Code 是 Anthropic 的产品。本包只模仿其终端美学，不含其任何代码。
 
-## Troubleshooting
+## 故障排查
 
-- **Header (Clawd) missing** — another TUI extension loaded after this one
-  probably cleared the shared header slot. Put this package **after** it in
-  the `packages` list in `settings.json`, then `/reload`. Also check the
-  other extension's own header toggle (for pi-cc-extensions:
-  `showStartupHeader` in `~/.pi/agent/claude-code-style.json`).
-- **Tool rows look wrong / double-styled** — two extensions are styling the
-  same rows. Run `/claude-tools off` (persists across `/reload`) to hand
-  tool rendering to the other extension, or `/claude-tools on` to take it
-  back.
-- **Toggled something but nothing changed** — pi caches compiled extensions
-  on disk. Run `rm $TMPDIR/jiti/*claude-tui* $TMPDIR/jiti/*claude-code-tui*`,
-  restart pi, and check again.
-- **`/claude-tools off` didn't survive `/reload`** — you're on ≤ 1.2.2.
-  Re-run `pi install git:github.com/Shiorangerin/pi-claude-code-tui` to get
-  ≥ 1.3.1, where the choice is persisted.
+- **头图（Clawd）不见了** — 很可能是另一个 TUI 扩展在本包之后加载，清空了共享头图槽位。请在 `settings.json` 的 `packages` 列表里把本包放在它**后面**，然后 `/reload`。另外检查对方扩展自己的头图开关（pi-cc-extensions 是 `~/.pi/agent/claude-code-style.json` 里的 `showStartupHeader`）。
+- **工具行显示异常 / 双重样式** — 两个扩展在样式化同一批工具行。运行 `/claude-tools off`（`/reload` 后依然生效）把工具渲染让给另一个扩展，或 `/claude-tools on` 收回。
+- **切换了选项但没有任何变化** — pi 会在磁盘上缓存编译后的扩展。运行 `rm $TMPDIR/jiti/*claude-tui* $TMPDIR/jiti/*claude-code-tui*`，重启 pi 再试。
+- **`/claude-tools off` 在 `/reload` 后失效** — 你用的是 ≤ 1.2.2 版本。重新运行 `pi install git:github.com/Shiorangerin/pi-claude-code-tui` 升级到 ≥ 1.3.1，该版本会持久化选择。
 
-If none of the above helps, open an issue with your pi version
-(`pi --version`), the package version, and your `packages` list order.
+如果以上都没用，请开一个 issue，附上你的 pi 版本（`pi --version`）、包版本和 `packages` 列表顺序。
 
-## License
+## 许可证
 
 MIT
