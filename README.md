@@ -97,6 +97,27 @@ Two Claude Code behaviors live in your pi settings (not in this package), add th
 - The editor component is adapted from the MIT-licensed [pi-claude-code-tui](https://github.com/Phoobobo/pi-claude-code-tui) by Phoobobo.
 - Claude Code is a product of Anthropic. This package only mimics its terminal aesthetics and ships none of its code.
 
+## Troubleshooting
+
+- **Header (Clawd) missing** — another TUI extension loaded after this one
+  probably cleared the shared header slot. Put this package **after** it in
+  the `packages` list in `settings.json`, then `/reload`. Also check the
+  other extension's own header toggle (for pi-cc-extensions:
+  `showStartupHeader` in `~/.pi/agent/claude-code-style.json`).
+- **Tool rows look wrong / double-styled** — two extensions are styling the
+  same rows. Run `/claude-tools off` (persists across `/reload`) to hand
+  tool rendering to the other extension, or `/claude-tools on` to take it
+  back.
+- **Toggled something but nothing changed** — pi caches compiled extensions
+  on disk. Run `rm $TMPDIR/jiti/*claude-tui* $TMPDIR/jiti/*claude-code-tui*`,
+  restart pi, and check again.
+- **`/claude-tools off` didn't survive `/reload`** — you're on ≤ 1.2.2.
+  Re-run `pi install git:github.com/Shiorangerin/pi-claude-code-tui` to get
+  ≥ 1.3.1, where the choice is persisted.
+
+If none of the above helps, open an issue with your pi version
+(`pi --version`), the package version, and your `packages` list order.
+
 ## License
 
 MIT
