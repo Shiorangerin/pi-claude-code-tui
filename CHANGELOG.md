@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0
+
+- **Tool rows on their own switch — compatible with pi-cc-extensions** —
+  new `/claude-tools on|off` command plus a `CC_TUI_TOOL_ROWS=0` env opt-out.
+  The CC `⏺ Tool(args)` + `⎿ output` rows (7 built-ins + third-party
+  fallback) can now be turned off independently so another TUI suite such as
+  [minuque/pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)
+  owns tool rendering, while the header / editor / spinner / status line /
+  footer stay on. Off at runtime re-registers the stock native tools
+  immediately; `/reload` hands rendering fully to the other extension.
+  Default is on, so existing setups look exactly the same.
+
 ## 1.2.2
 
 - **`⏺` dot states (CC fidelity)** — orange while running, green on success

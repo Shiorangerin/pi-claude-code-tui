@@ -40,7 +40,8 @@ Please install the pi package "pi-claude-code-tui" for me:
 
 | Command | Description |
 | --- | --- |
-| `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line) |
+| `/claude-tui` | Toggle the whole replica (header / editor / spinner / status line; tool rows are separate, see below) |
+| `/claude-tools` | Toggle the CC tool rows independently (`on` / `off`, no-arg flips) |
 | `/claude-footer` | Toggle pi's native footer (`on`: keep MCP/other footers, hide CC status widget; `off`: CC-clean look) |
 | `/claude-verb` | Reroll the spinner verb |
 | `Shift+Tab` or `/mode` | Toggle **Plan Mode** / **Auto Mode** |
@@ -51,6 +52,23 @@ Please install the pi package "pi-claude-code-tui" for me:
 - **Plan Mode** — read-only research: `edit`/`write` tools are disabled and the model is instructed to explore and present a plan instead of making changes
 
 The current mode is always shown at the left of the hint line below the prompt bar.
+
+## Compatibility with other TUI extensions
+
+Tool rendering is single-occupancy in pi: only one extension can style the
+`read` / `bash` / `grep` / `find` / `ls` / `write` / `edit` rows. This package
+now keeps its tool rows on an independent switch so it can coexist with
+another TUI suite such as [pi-cc-extensions](https://github.com/minuque/pi-cc-extensions)
+(which owns expandable tool cards, rich diffs and mouse interaction):
+
+- **Keep this package's shell, give away the cards** (recommended combo):
+  start pi with `CC_TUI_TOOL_ROWS=0 pi`, or run `/claude-tools off` inside
+  pi followed by `/reload` so the other extension takes over tool rendering.
+  Header, editor, spinner verbs, status line and footer all stay on.
+- **Keep this package's cards**: `/claude-tools on` (default). On the other
+  extension's side, turn its overlapping parts down (for pi-cc-extensions:
+  `showStartupHeader: false` and `enableWorkingMessage: false` in
+  `~/.pi/agent/claude-code-style.json`).
 
 ## Recommended settings
 

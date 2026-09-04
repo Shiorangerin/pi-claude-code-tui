@@ -17,7 +17,8 @@
  *   开原生底栏时自动隐藏，避免与 pi-mcp-adapter / pi-lens 的 footer 重复）
  *
  * Commands:
- *   /claude-tui  — 开/关整套复刻 UI
+ *   /claude-tui  — 开/关整套复刻 UI（头 / 输入框 / 转圈 / 状态栏，不含工具行）
+ *   /claude-tools — 单独开/关 CC 工具行（与其它 TUI 扩展共存用）
  *   /claude-verb — 立即换一个随机动词
  *   /claude-footer — 开/关原生底栏（开：兼容其它扩展 footer；关：CC 极简风）
  */
@@ -230,6 +231,13 @@ const ccResult = (
 
 export default function (pi: ExtensionAPI) {
 	let enabled = false;
+	// --- Tool rows (cards) live on their own switch: the CC `⏺ Tool(args)` +
+	// `⎿ output` rows for the 7 built-ins plus the third-party fallback can be
+	// turned off independently (`/claude-tools`, or `CC_TUI_TOOL_ROWS=0`), so
+	// another TUI extension (e.g. minuque/pi-cc-extensions) can own tool
+	// rendering while the rest of the replica (header / editor / spinner /
+	// status) stays on. Default on = previous behavior.
+	let toolRowsEnabled = process.env.CC_TUI_TOOL_ROWS !== "0";
 	let verb = randomOf(SPINNER_VERBS);
 	let runStart = 0;
 	let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -337,21 +345,21 @@ export default function (pi: ExtensionAPI) {
 		// inside render() throws where pi can't catch it (kills pi).
 		proto.getCallRenderer = function () {
 			const orig = origCall.call(this);
-			if (orig || !enabled || isBuiltin(this)) return orig;
+			if (orig || !enabled || !toolRowsEnabled || isBuiltin(this)) return orig;
 			// renderCall is a factory: (args, theme, ctx) => component
 			return (args: unknown, theme: unknown, rctx?: { isError?: boolean; isPartial?: boolean }) =>
 				ccCall(theme as CCTheme, this.toolName, JSON.stringify(args ?? {}), dotStatus(rctx));
 		};
 		proto.getResultRenderer = function () {
 			const orig = origResult.call(this);
-			if (orig || !enabled || isBuiltin(this)) return orig;
+			if (orig || !enabled || !toolRowsEnabled || isBuiltin(this)) return orig;
 			return (result: unknown, options: { expanded?: boolean }, theme: unknown, rctx: { isError?: boolean }) =>
 				ccResult(theme as CCTheme, "", result, options, Boolean(rctx?.isError));
 		};
 		// Drop the pending/success background box for third-party tools so they
 		// match the flat CC look of the overridden built-ins.
 		proto.getRenderShell = function () {
-			if (enabled && !isBuiltin(this) && this.toolDefinition !== undefined) return "self";
+			if (enabled && toolRowsEnabled && !isBuiltin(this) && this.toolDefinition !== undefined) return "self";
 			return origShell.call(this);
 		};
 		proto.__ccRowsPatched = true;
@@ -415,9 +423,10 @@ export default function (pi: ExtensionAPI) {
 		}));
 	};
 	// --- Tool rendering overrides: delegate execute to real built-ins ---
-	const registerToolOverrides = () => {
+	// Shared builder so the CC overrides and the stock natives stay in sync.
+	const buildBuiltins = () => {
 		const cwd = process.cwd();
-		const builtins = {
+		return {
 			read: createReadToolDefinition(cwd),
 			bash: createBashToolDefinition(cwd),
 			grep: createGrepToolDefinition(cwd),
@@ -426,6 +435,9 @@ export default function (pi: ExtensionAPI) {
 			write: createWriteToolDefinition(cwd),
 			edit: createEditToolDefinition(cwd),
 		};
+	};
+	const registerToolOverrides = () => {
+		const builtins = buildBuiltins();
 
 		const callArgs: Record<string, (a: Record<string, unknown>) => string> = {
 			read: (a) => strArg(a.path),
@@ -471,6 +483,17 @@ export default function (pi: ExtensionAPI) {
 		registerCC("ls", builtins.ls, ccRenderers("ls"));
 		registerCC("write", builtins.write, ccRenderers("write"));
 		registerCC("edit", builtins.edit, ccRenderers("edit"));
+	};
+
+	// Stock natives (same definitions, no render overrides): re-registered
+	// when the user turns the CC tool rows off at runtime, so the transcript
+	// immediately stops using CC rows. Another TUI extension that owns tool
+	// rendering takes over fully after a /reload (load order decides).
+	const registerNativeTools = () => {
+		const builtins = buildBuiltins();
+		for (const builtin of Object.values(builtins)) {
+			pi.registerTool(builtin as Parameters<typeof pi.registerTool>[0]);
+		}
 	};
 
 	// --- Footer line as belowEditor widget (native-on mode; keeps the
@@ -702,6 +725,22 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("claude-tools", {
+		description: "Toggle the CC tool rows independently (off: coexist with other TUI extensions' tool rendering)",
+		handler: async (args, ctx) => {
+			const a = args.trim().toLowerCase();
+			const next = a === "on" ? true : a === "off" ? false : !toolRowsEnabled;
+			toolRowsEnabled = next;
+			if (next) {
+				registerToolOverrides();
+				ctx.ui.notify("CC tool rows on", "info");
+			} else {
+				registerNativeTools();
+				ctx.ui.notify("CC tool rows off — run /reload if another TUI extension should take over tool rendering", "info");
+			}
+		},
+	});
+
 	pi.registerCommand("claude-verb", {
 		description: "Reroll the Claude Code spinner verb",
 		handler: async (_args, ctx) => {
@@ -724,7 +763,9 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	registerToolOverrides();
+	// Off at load (CC_TUI_TOOL_ROWS=0): don't touch tool registration at all,
+	// so another TUI extension owns tool rendering from the start.
+	if (toolRowsEnabled) registerToolOverrides();
 
 	// Compact CC-style user bars: UserMessageComponent wraps content in a Box
 	// with hardcoded paddingY=1 (a blank row above and below the bar). Patch
